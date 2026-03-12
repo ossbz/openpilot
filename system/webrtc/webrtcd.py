@@ -171,7 +171,9 @@ class StreamSession:
 
   async def run(self):
     try:
+      print(f"[Session {self.identifier[:8]}] waiting for connection...")
       await self.stream.wait_for_connection()
+      print(f"[Session {self.identifier[:8]}] connected! has_messaging={self.stream.has_messaging_channel()}")
       if self.stream.has_messaging_channel():
         if self.incoming_bridge is not None:
           await self.shared_pub_master.add_services_if_needed(self.incoming_bridge_services)
@@ -183,10 +185,12 @@ class StreamSession:
       self.logger.info("Stream session (%s) connected", self.identifier)
 
       await self.stream.wait_for_disconnection()
+      print(f"[Session {self.identifier[:8]}] disconnected")
       await self.post_run_cleanup()
 
       self.logger.info("Stream session (%s) ended", self.identifier)
-    except Exception:
+    except Exception as e:
+      print(f"[Session {self.identifier[:8]}] EXCEPTION: {e}")
       self.logger.exception("Stream session failure")
 
   async def post_run_cleanup(self):
@@ -247,7 +251,7 @@ async def on_shutdown(app: 'web.Application'):
 
 def webrtcd_thread(host: str, port: int, debug: bool):
   logging.basicConfig(level=logging.CRITICAL, handlers=[logging.StreamHandler()])
-  logging_level = logging.DEBUG if debug else logging.INFO
+  logging_level = logging.DEBUG #if debug else logging.INFO
   logging.getLogger("WebRTCStream").setLevel(logging_level)
   logging.getLogger("webrtcd").setLevel(logging_level)
 
