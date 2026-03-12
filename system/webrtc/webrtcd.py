@@ -207,25 +207,11 @@ async def get_stream(request: 'web.Request'):
   stream_dict, debug_mode = request.app['streams'], request.app['debug']
   raw_body = await request.json()
   body = StreamRequestBody(**raw_body)
-  print(f"[get_stream] cameras={body.cameras}, debug_mode={debug_mode}")
 
-  try:
-    session = StreamSession(body.sdp, body.cameras, body.bridge_services_in, body.bridge_services_out, debug_mode)
-    # dump video codecs from the incoming SDP for debugging
-    import aiortc.sdp
-    sdp_desc = aiortc.sdp.SessionDescription.parse(body.sdp)
-    for m in sdp_desc.media:
-      if m.kind == "video":
-        print(f"[get_stream] SDP video codecs: {[c.mimeType for c in m.rtp.codecs]}")
-    print(f"[get_stream] session created, getting answer...")
-    answer = await session.get_answer()
-    print(f"[get_stream] got answer, sdp type={answer.type}, sdp length={len(answer.sdp)}")
-  except Exception as e:
-    print(f"[get_stream] EXCEPTION: {e}")
-    import traceback; traceback.print_exc()
-    raise
-
+  session = StreamSession(body.sdp, body.cameras, body.bridge_services_in, body.bridge_services_out, debug_mode)
+  answer = await session.get_answer()
   session.start()
+
   stream_dict[session.identifier] = session
 
   return web.json_response({"sdp": answer.sdp, "type": answer.type})
@@ -261,7 +247,7 @@ async def on_shutdown(app: 'web.Application'):
 
 def webrtcd_thread(host: str, port: int, debug: bool):
   logging.basicConfig(level=logging.CRITICAL, handlers=[logging.StreamHandler()])
-  logging_level = logging.DEBUG #if debug else logging.INFO
+  logging_level = logging.DEBUG if debug else logging.INFO
   logging.getLogger("WebRTCStream").setLevel(logging_level)
   logging.getLogger("webrtcd").setLevel(logging_level)
 
