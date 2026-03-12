@@ -171,9 +171,7 @@ class StreamSession:
 
   async def run(self):
     try:
-      print(f"[Session {self.identifier[:8]}] waiting for connection...")
       await self.stream.wait_for_connection()
-      print(f"[Session {self.identifier[:8]}] connected! has_messaging={self.stream.has_messaging_channel()}")
       if self.stream.has_messaging_channel():
         if self.incoming_bridge is not None:
           await self.shared_pub_master.add_services_if_needed(self.incoming_bridge_services)
@@ -185,12 +183,10 @@ class StreamSession:
       self.logger.info("Stream session (%s) connected", self.identifier)
 
       await self.stream.wait_for_disconnection()
-      print(f"[Session {self.identifier[:8]}] disconnected")
       await self.post_run_cleanup()
 
       self.logger.info("Stream session (%s) ended", self.identifier)
-    except Exception as e:
-      print(f"[Session {self.identifier[:8]}] EXCEPTION: {e}")
+    except Exception:
       self.logger.exception("Stream session failure")
 
   async def post_run_cleanup(self):
@@ -215,6 +211,12 @@ async def get_stream(request: 'web.Request'):
 
   try:
     session = StreamSession(body.sdp, body.cameras, body.bridge_services_in, body.bridge_services_out, debug_mode)
+    # dump video codecs from the incoming SDP for debugging
+    import aiortc.sdp
+    sdp_desc = aiortc.sdp.SessionDescription.parse(body.sdp)
+    for m in sdp_desc.media:
+      if m.kind == "video":
+        print(f"[get_stream] SDP video codecs: {[c.mimeType for c in m.rtp.codecs]}")
     print(f"[get_stream] session created, getting answer...")
     answer = await session.get_answer()
     print(f"[get_stream] got answer, sdp type={answer.type}, sdp length={len(answer.sdp)}")
