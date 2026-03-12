@@ -211,11 +211,19 @@ async def get_stream(request: 'web.Request'):
   stream_dict, debug_mode = request.app['streams'], request.app['debug']
   raw_body = await request.json()
   body = StreamRequestBody(**raw_body)
+  print(f"[get_stream] cameras={body.cameras}, debug_mode={debug_mode}")
 
-  session = StreamSession(body.sdp, body.cameras, body.bridge_services_in, body.bridge_services_out, debug_mode)
-  answer = await session.get_answer()
+  try:
+    session = StreamSession(body.sdp, body.cameras, body.bridge_services_in, body.bridge_services_out, debug_mode)
+    print(f"[get_stream] session created, getting answer...")
+    answer = await session.get_answer()
+    print(f"[get_stream] got answer, sdp type={answer.type}, sdp length={len(answer.sdp)}")
+  except Exception as e:
+    print(f"[get_stream] EXCEPTION: {e}")
+    import traceback; traceback.print_exc()
+    raise
+
   session.start()
-
   stream_dict[session.identifier] = session
 
   return web.json_response({"sdp": answer.sdp, "type": answer.type})
