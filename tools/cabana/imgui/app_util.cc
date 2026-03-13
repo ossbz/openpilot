@@ -110,23 +110,28 @@ static std::string buildDialogCommand(DialogMode mode, const std::string &title,
                                        const std::string &filter_name, const std::string &filter_pattern) {
   std::string cmd;
 #ifdef __APPLE__
-  if (mode == DialogMode::Directory) {
-    cmd = "osascript -e 'POSIX path of (choose folder";
-  } else if (mode == DialogMode::Save) {
-    cmd = "osascript -e 'POSIX path of (choose file name";
-  } else {
-    cmd = "osascript -e 'POSIX path of (choose file";
-  }
-  if (!title.empty()) {
-    // Escape backslashes and double quotes for AppleScript string
-    std::string safe_title;
-    for (char c : title) {
-      if (c == '\\' || c == '"') safe_title += '\\';
-      safe_title += c;
+  {
+    // Build the AppleScript expression, then shell-escape the whole thing
+    std::string expr;
+    if (mode == DialogMode::Directory) {
+      expr = "POSIX path of (choose folder";
+    } else if (mode == DialogMode::Save) {
+      expr = "POSIX path of (choose file name";
+    } else {
+      expr = "POSIX path of (choose file";
     }
-    cmd += " with prompt \"" + safe_title + "\"";
+    if (!title.empty()) {
+      // Escape backslashes and double quotes for AppleScript string literal
+      std::string safe_title;
+      for (char c : title) {
+        if (c == '\\' || c == '"') safe_title += '\\';
+        safe_title += c;
+      }
+      expr += " with prompt \"" + safe_title + "\"";
+    }
+    expr += ")";
+    cmd = "osascript -e " + shellEscape(expr);
   }
-  cmd += ")'";
 #else
   if (hasCommand("zenity")) {
     cmd = "zenity --file-selection";

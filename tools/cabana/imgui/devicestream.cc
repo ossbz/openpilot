@@ -13,7 +13,7 @@
 #include "cereal/services.h"
 #include "tools/cabana/imgui/util.h"
 
-DeviceStream::DeviceStream(std::string address) : zmq_address(std::move(address)), LiveStream() {
+DeviceStream::DeviceStream(std::string address) : LiveStream(), zmq_address(std::move(address)) {
 }
 
 DeviceStream::~DeviceStream() {

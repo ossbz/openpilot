@@ -12,12 +12,12 @@ void exportToCSV(const std::string &file_name, std::optional<MessageId> msg_id) 
   std::ofstream file(file_name);
   if (!file.is_open()) return;
 
+  static const char hex_chars[] = "0123456789ABCDEF";
   file << "time,addr,bus,data\n";
   for (auto e : msg_id ? can->events(*msg_id) : can->allEvents()) {
-    char time_buf[32], addr_buf[32], data_buf[256];
+    char time_buf[32], addr_buf[32], data_buf[514];  // 2 ("0x") + 255*2 (max hex) + 1 (null)
     snprintf(time_buf, sizeof(time_buf), "%.3f", can->toSeconds(e->mono_time));
     snprintf(addr_buf, sizeof(addr_buf), "0x%x", e->address);
-    static const char hex_chars[] = "0123456789ABCDEF";
     char *p = data_buf;
     *p++ = '0'; *p++ = 'x';
     for (int i = 0; i < e->size; ++i) {
