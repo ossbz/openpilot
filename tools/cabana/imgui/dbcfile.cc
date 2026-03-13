@@ -8,23 +8,12 @@
 #include <sstream>
 #include <stdexcept>
 
-// Helper: trim whitespace
-static std::string trim(const std::string &s) {
-  auto start = s.find_first_not_of(" \t\r\n");
-  if (start == std::string::npos) return "";
-  auto end = s.find_last_not_of(" \t\r\n");
-  return s.substr(start, end - start + 1);
-}
+#include "common/util.h"
 
-// Helper: check if string starts with prefix
-static bool startsWith(const std::string &s, const std::string &prefix) {
-  return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
-}
-
-// Helper: check if string ends with suffix
-static bool endsWith(const std::string &s, const std::string &suffix) {
-  return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
+// Aliases for common/util.h helpers
+static inline std::string trim(const std::string &s) { return util::strip(s); }
+static inline bool startsWith(const std::string &s, const std::string &prefix) { return util::starts_with(s, prefix); }
+static inline bool endsWith(const std::string &s, const std::string &suffix) { return util::ends_with(s, suffix); }
 
 // Helper: get basename without extension
 static std::string baseName(const std::string &path) {

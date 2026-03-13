@@ -46,8 +46,6 @@ void loadCabanaFonts();
 bool saveScreenshot(const std::string &path, int width, int height);
 bool signalFitsInMessage(const cabana::Signal &sig, int msg_size_bytes);
 int nextAvailableSignalBit(const cabana::Msg *msg, int msg_size_bytes);
-std::string getExeDir();
-std::string homeDir();
 std::string autoDbcForFingerprint(const std::string &fingerprint);
 std::string streamLabel(VisionStreamType type);
 void nv12ToRgba(const uint8_t *y_plane, const uint8_t *uv_plane, int width, int height, int stride, std::vector<uint8_t> &rgba);

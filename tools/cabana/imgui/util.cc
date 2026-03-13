@@ -5,6 +5,7 @@
 #include <climits>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -53,35 +54,31 @@ std::string signalToolTip(const cabana::Signal *sig) {
   return buf;
 }
 
+std::string getExeDir() {
+#ifdef __APPLE__
+  char buf[1024];
+  uint32_t size = sizeof(buf);
+  if (_NSGetExecutablePath(buf, &size) == 0) {
+    return std::filesystem::path(buf).parent_path().string();
+  }
+  return ".";
+#else
+  return std::filesystem::read_symlink("/proc/self/exe").parent_path().string();
+#endif
+}
+
+std::string homeDir() {
+  const char *home = std::getenv("HOME");
+  return home ? home : "/tmp";
+}
+
 void initApp(int argc, char *argv[]) {
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
   std::signal(SIGPIPE, SIG_IGN);
 
   // Ensure the current dir matches the executable's directory
-#ifdef __APPLE__
-  char exe_path[PATH_MAX];
-  uint32_t size = sizeof(exe_path);
-  if (_NSGetExecutablePath(exe_path, &size) == 0) {
-    std::string dir(exe_path);
-    auto pos = dir.rfind('/');
-    if (pos != std::string::npos) {
-      (void)!chdir(dir.substr(0, pos).c_str());
-    }
-  }
-#else
-  char exe_path[PATH_MAX];
-  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-  if (len > 0) {
-    exe_path[len] = '\0';
-    std::string dir(exe_path);
-    auto pos = dir.rfind('/');
-    if (pos != std::string::npos) {
-      dir = dir.substr(0, pos);
-      (void)!chdir(dir.c_str());
-    }
-  }
-#endif
+  (void)!chdir(getExeDir().c_str());
 }
 
 namespace utils {

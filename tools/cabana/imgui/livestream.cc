@@ -50,7 +50,7 @@ LiveStream::~LiveStream() {
 void LiveStream::start() {
   stop();  // Clean up any existing thread first
   stop_requested_ = false;
-  stream_thread_ = new std::thread([this]() { streamThread(); });
+  stream_thread_ = std::make_unique<std::thread>([this]() { streamThread(); });
   begin_date_time_secs_ = std::chrono::duration<double>(
     std::chrono::system_clock::now().time_since_epoch()).count();
   last_poll_time_ = std::chrono::steady_clock::now();
@@ -63,8 +63,7 @@ void LiveStream::stop() {
   if (stream_thread_->joinable()) {
     stream_thread_->join();
   }
-  delete stream_thread_;
-  stream_thread_ = nullptr;
+  stream_thread_.reset();
 }
 
 void LiveStream::handleEvent(kj::ArrayPtr<capnp::word> data) {

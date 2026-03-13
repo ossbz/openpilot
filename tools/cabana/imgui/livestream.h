@@ -30,7 +30,7 @@ protected:
   void handleEvent(kj::ArrayPtr<capnp::word> event);
 
   std::mutex lock;
-  std::thread *stream_thread_ = nullptr;
+  std::unique_ptr<std::thread> stream_thread_;
   std::atomic<bool> stop_requested_{false};
   std::vector<const CanEvent *> received_events_;
 

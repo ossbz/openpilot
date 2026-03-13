@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "cereal/services.h"
+#include "tools/cabana/imgui/util.h"
 
 DeviceStream::DeviceStream(std::string address) : zmq_address(std::move(address)), LiveStream() {
 }
@@ -37,20 +38,7 @@ void DeviceStream::start() {
 
   if (!zmq_address.empty()) {
     // Get the path to the bridge binary
-    char exe_path[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    std::string bridge_path;
-    if (len > 0) {
-      exe_path[len] = '\0';
-      std::string exe_dir(exe_path);
-      auto pos = exe_dir.rfind('/');
-      if (pos != std::string::npos) {
-        bridge_path = exe_dir.substr(0, pos) + "/../../cereal/messaging/bridge";
-      }
-    }
-    if (bridge_path.empty()) {
-      bridge_path = "bridge";
-    }
+    std::string bridge_path = getExeDir() + "/../../cereal/messaging/bridge";
 
     // Resolve to absolute path
     char resolved[PATH_MAX];

@@ -5,6 +5,7 @@
 
 #include "tools/cabana/imgui/dbcmanager.h"
 #include "tools/cabana/imgui/stream.h"
+#include "tools/cabana/imgui/util.h"
 
 namespace utils {
 
@@ -14,22 +15,12 @@ void exportToCSV(const std::string &file_name, std::optional<MessageId> msg_id) 
 
   file << "time,addr,bus,data\n";
   for (auto e : msg_id ? can->events(*msg_id) : can->allEvents()) {
-    char time_buf[32], addr_buf[32], data_buf[256];
+    char time_buf[32], addr_buf[32];
     snprintf(time_buf, sizeof(time_buf), "%.3f", can->toSeconds(e->mono_time));
     snprintf(addr_buf, sizeof(addr_buf), "0x%x", e->address);
+    std::string hex_data = "0x" + utils::toHex({e->dat, e->dat + e->size});
 
-    // Convert data to hex
-    char *p = data_buf;
-    *p++ = '0';
-    *p++ = 'x';
-    static const char hex_chars[] = "0123456789ABCDEF";
-    for (int i = 0; i < e->size; ++i) {
-      *p++ = hex_chars[(e->dat[i] >> 4) & 0xF];
-      *p++ = hex_chars[e->dat[i] & 0xF];
-    }
-    *p = '\0';
-
-    file << time_buf << "," << addr_buf << "," << (int)e->src << "," << data_buf << "\n";
+    file << time_buf << "," << addr_buf << "," << (int)e->src << "," << hex_data << "\n";
   }
 }
 

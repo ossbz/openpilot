@@ -4,8 +4,11 @@
 #include <string>
 #include <vector>
 
-#define LIGHT_THEME 1
-#define DARK_THEME 2
+enum CabanaTheme : int {
+  THEME_AUTO = 0,
+  LIGHT_THEME = 1,
+  DARK_THEME = 2,
+};
 
 class Settings {
 public:

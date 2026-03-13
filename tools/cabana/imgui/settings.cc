@@ -7,20 +7,18 @@
 #include <sstream>
 
 #include "third_party/json11/json11.hpp"
+#include "tools/cabana/imgui/util.h"
 
 Settings settings;
 
 static std::string settingsPath() {
-  const char *home = std::getenv("HOME");
-  return std::string(home ? home : "/tmp") + "/.cabana_settings.json";
+  return homeDir() + "/.cabana_settings.json";
 }
 
 // One-time migration from Qt QSettings ("cabana") INI format to our JSON format.
 // QSettings("cabana") on Linux writes to ~/.config/cabana.conf in INI format.
 static void migrateFromQtSettings(Settings &s) {
-  const char *home = std::getenv("HOME");
-  if (!home) return;
-  std::string qt_path = std::string(home) + "/.config/cabana.conf";
+  std::string qt_path = homeDir() + "/.config/cabana.conf";
   if (!std::filesystem::exists(qt_path)) return;
 
   std::ifstream f(qt_path);
@@ -79,8 +77,7 @@ static void migrateFromQtSettings(Settings &s) {
 }
 
 Settings::Settings() {
-  const char *home = std::getenv("HOME");
-  std::string home_dir = home ? home : "/tmp";
+  std::string home_dir = homeDir();
   last_dir = home_dir;
   last_route_dir = home_dir;
   log_path = home_dir + "/cabana_live_stream/";

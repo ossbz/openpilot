@@ -14,10 +14,6 @@
 #include <unordered_map>
 #include <vector>
 
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
-
 #include "imgui.h"
 #include "implot.h"
 #include "third_party/json11/json11.hpp"
@@ -102,22 +98,55 @@ bool hasNativeFileDialogs() {
 #endif
 }
 
-// Native file dialog helpers using zenity/kdialog (Linux) or osascript (macOS)
-std::string nativeOpenFileDialog(const std::string &title, const std::string &default_path, const std::string &filter_name, const std::string &filter_pattern) {
+// Run a shell command, read one line of stdout, and return it trimmed.
+static std::string popenReadLine(const std::string &cmd) {
+  FILE *f = popen(cmd.c_str(), "r");
+  if (!f) return {};
+  char buf[2048] = {};
+  std::string result;
+  if (fgets(buf, sizeof(buf), f)) {
+    result = buf;
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
+  }
+  pclose(f);
+  return result;
+}
+
+// Build the platform-specific command for a file dialog, or return empty if no tool is available.
+enum class DialogMode { Open, Save, Directory };
+static std::string buildDialogCommand(DialogMode mode, const std::string &title, const std::string &default_path,
+                                       const std::string &filter_name, const std::string &filter_pattern) {
   std::string cmd;
 #ifdef __APPLE__
-  cmd = "osascript -e 'POSIX path of (choose file";
+  if (mode == DialogMode::Directory) {
+    cmd = "osascript -e 'POSIX path of (choose folder";
+  } else if (mode == DialogMode::Save) {
+    cmd = "osascript -e 'POSIX path of (choose file name";
+  } else {
+    cmd = "osascript -e 'POSIX path of (choose file";
+  }
   if (!title.empty()) cmd += " with prompt \"" + title + "\"";
   cmd += ")'";
 #else
   if (hasCommand("zenity")) {
     cmd = "zenity --file-selection";
+    if (mode == DialogMode::Directory) cmd += " --directory";
+    if (mode == DialogMode::Save) cmd += " --save --confirm-overwrite";
     if (!title.empty()) cmd += " --title=" + shellEscape(title);
-    if (!default_path.empty()) cmd += " --filename=" + shellEscape(default_path + "/");
+    if (!default_path.empty()) {
+      std::string fname = default_path + (mode != DialogMode::Save ? "/" : "");
+      cmd += " --filename=" + shellEscape(fname);
+    }
     if (!filter_pattern.empty()) cmd += " --file-filter=" + shellEscape(filter_name + " | " + filter_pattern) + " --file-filter=" + shellEscape("All files | *");
   } else if (hasCommand("kdialog")) {
-    cmd = "kdialog --getopenfilename " + shellEscape(default_path.empty() ? "." : default_path);
-    if (!filter_pattern.empty()) cmd += " " + shellEscape(filter_pattern);
+    if (mode == DialogMode::Directory) {
+      cmd = "kdialog --getexistingdirectory " + shellEscape(default_path.empty() ? "." : default_path);
+    } else if (mode == DialogMode::Save) {
+      cmd = "kdialog --getsavefilename " + shellEscape(default_path.empty() ? "." : default_path);
+    } else {
+      cmd = "kdialog --getopenfilename " + shellEscape(default_path.empty() ? "." : default_path);
+    }
+    if (!filter_pattern.empty() && mode != DialogMode::Directory) cmd += " " + shellEscape(filter_pattern);
     if (!title.empty()) cmd += " --title " + shellEscape(title);
   } else {
     fprintf(stderr, "No file dialog tool found (install zenity or kdialog)\n");
@@ -125,85 +154,23 @@ std::string nativeOpenFileDialog(const std::string &title, const std::string &de
   }
 #endif
   cmd += " 2>/dev/null";
-  FILE *f = popen(cmd.c_str(), "r");
-  if (!f) return {};
-  char buf[2048] = {};
-  if (fgets(buf, sizeof(buf), f)) {
-    pclose(f);
-    std::string result(buf);
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
-  }
-  pclose(f);
-  return {};
+  return cmd;
+}
+
+// Native file dialog helpers using zenity/kdialog (Linux) or osascript (macOS)
+std::string nativeOpenFileDialog(const std::string &title, const std::string &default_path, const std::string &filter_name, const std::string &filter_pattern) {
+  std::string cmd = buildDialogCommand(DialogMode::Open, title, default_path, filter_name, filter_pattern);
+  return cmd.empty() ? std::string{} : popenReadLine(cmd);
 }
 
 std::string nativeSaveFileDialog(const std::string &title, const std::string &default_name, const std::string &filter_name, const std::string &filter_pattern) {
-  std::string cmd;
-#ifdef __APPLE__
-  cmd = "osascript -e 'POSIX path of (choose file name";
-  if (!title.empty()) cmd += " with prompt \"" + title + "\"";
-  cmd += ")'";
-#else
-  if (hasCommand("zenity")) {
-    cmd = "zenity --file-selection --save --confirm-overwrite";
-    if (!title.empty()) cmd += " --title=" + shellEscape(title);
-    if (!default_name.empty()) cmd += " --filename=" + shellEscape(default_name);
-    if (!filter_pattern.empty()) cmd += " --file-filter=" + shellEscape(filter_name + " | " + filter_pattern) + " --file-filter=" + shellEscape("All files | *");
-  } else if (hasCommand("kdialog")) {
-    cmd = "kdialog --getsavefilename " + shellEscape(default_name.empty() ? "." : default_name);
-    if (!filter_pattern.empty()) cmd += " " + shellEscape(filter_pattern);
-    if (!title.empty()) cmd += " --title " + shellEscape(title);
-  } else {
-    fprintf(stderr, "No file dialog tool found (install zenity or kdialog)\n");
-    return {};
-  }
-#endif
-  cmd += " 2>/dev/null";
-  FILE *f = popen(cmd.c_str(), "r");
-  if (!f) return {};
-  char buf[2048] = {};
-  if (fgets(buf, sizeof(buf), f)) {
-    pclose(f);
-    std::string result(buf);
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
-  }
-  pclose(f);
-  return {};
+  std::string cmd = buildDialogCommand(DialogMode::Save, title, default_name, filter_name, filter_pattern);
+  return cmd.empty() ? std::string{} : popenReadLine(cmd);
 }
 
 std::string nativeDirectoryDialog(const std::string &title, const std::string &default_path) {
-  std::string cmd;
-#ifdef __APPLE__
-  cmd = "osascript -e 'POSIX path of (choose folder";
-  if (!title.empty()) cmd += " with prompt \"" + title + "\"";
-  cmd += ")'";
-#else
-  if (hasCommand("zenity")) {
-    cmd = "zenity --file-selection --directory";
-    if (!title.empty()) cmd += " --title=" + shellEscape(title);
-    if (!default_path.empty()) cmd += " --filename=" + shellEscape(default_path + "/");
-  } else if (hasCommand("kdialog")) {
-    cmd = "kdialog --getexistingdirectory " + shellEscape(default_path.empty() ? "." : default_path);
-    if (!title.empty()) cmd += " --title " + shellEscape(title);
-  } else {
-    fprintf(stderr, "No file dialog tool found (install zenity or kdialog)\n");
-    return {};
-  }
-#endif
-  cmd += " 2>/dev/null";
-  FILE *f = popen(cmd.c_str(), "r");
-  if (!f) return {};
-  char buf[2048] = {};
-  if (fgets(buf, sizeof(buf), f)) {
-    pclose(f);
-    std::string result(buf);
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
-  }
-  pclose(f);
-  return {};
+  std::string cmd = buildDialogCommand(DialogMode::Directory, title, default_path, {}, {});
+  return cmd.empty() ? std::string{} : popenReadLine(cmd);
 }
 
 // Match Qt's NameValidator: only word characters (alphanumeric + underscore)
@@ -223,13 +190,12 @@ void normalizeDbcIdentifier(char *buf) {
 }
 
 std::string pathBasename(const std::string &path) {
-  auto pos = path.find_last_of("/\\");
-  return pos == std::string::npos ? path : path.substr(pos + 1);
+  return std::filesystem::path(path).filename().string();
 }
 
 std::string pathDirname(const std::string &path) {
-  auto pos = path.find_last_of("/\\");
-  return pos == std::string::npos ? "." : path.substr(0, pos);
+  auto parent = std::filesystem::path(path).parent_path().string();
+  return parent.empty() ? "." : parent;
 }
 
 void drawAlertOverlay(ImDrawList *draw, const Timeline::Entry &alert, float x, float y, float w) {
@@ -501,15 +467,8 @@ bool detectSystemDarkTheme() {
     return false;
   }
   // Try gsettings for GNOME
-  FILE *f = popen("gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null", "r");
-  if (f) {
-    char buf[256] = {};
-    if (fgets(buf, sizeof(buf), f)) {
-      pclose(f);
-      return std::string(buf).find("dark") != std::string::npos;
-    }
-    pclose(f);
-  }
+  std::string result = popenReadLine("gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null");
+  if (!result.empty()) return result.find("dark") != std::string::npos;
   return true;  // default to dark
 }
 
@@ -531,18 +490,7 @@ void applyCabanaTheme(int theme, float scale) {
 static std::string resolveFontFile(const std::string &family, bool monospace = false) {
   std::string pattern = family;
   if (monospace) pattern += ":spacing=100";
-  std::string cmd = "fc-match -f '%{file}' '" + pattern + "' 2>/dev/null";
-  FILE *f = popen(cmd.c_str(), "r");
-  if (!f) return {};
-  char buf[2048] = {};
-  if (fgets(buf, sizeof(buf), f)) {
-    pclose(f);
-    std::string result(buf);
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-    return result;
-  }
-  pclose(f);
-  return {};
+  return popenReadLine("fc-match -f '%{file}' '" + pattern + "' 2>/dev/null");
 }
 
 void loadCabanaFonts() {
@@ -619,25 +567,6 @@ int nextAvailableSignalBit(const cabana::Msg *msg, int msg_size_bytes) {
   auto it = std::find(used.begin(), used.end(), false);
   int logical = it == used.end() ? 0 : static_cast<int>(std::distance(used.begin(), it));
   return flipBitPos(logical);
-}
-
-std::string getExeDir() {
-#ifdef __APPLE__
-  char buf[1024];
-  uint32_t size = sizeof(buf);
-  if (_NSGetExecutablePath(buf, &size) == 0) {
-    return std::filesystem::path(buf).parent_path().string();
-  }
-  return ".";
-#else
-  auto exe = std::filesystem::read_symlink("/proc/self/exe");
-  return exe.parent_path().string();
-#endif
-}
-
-std::string homeDir() {
-  const char *home = std::getenv("HOME");
-  return home ? home : "/tmp";
 }
 
 std::string autoDbcForFingerprint(const std::string &fingerprint) {

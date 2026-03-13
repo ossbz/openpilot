@@ -11,6 +11,8 @@ void clearCabanaShutdownRequested();
 int num_decimals(double num);
 std::string signalToolTip(const cabana::Signal *sig);
 void initApp(int argc, char *argv[]);
+std::string getExeDir();
+std::string homeDir();
 
 namespace utils {
 
