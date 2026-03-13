@@ -24,6 +24,53 @@
 
 namespace {
 constexpr std::array<float, 11> kPlaybackSpeeds = {0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f, 0.8f, 1.0f, 2.0f, 3.0f, 5.0f};
+
+// Icon button: square button with a custom-drawn icon (matching bootstrap icons from Qt cabana)
+typedef void (*IconDrawFn)(ImDrawList *, ImVec2, ImVec2, ImU32);
+
+static bool iconButton(const char *str_id, IconDrawFn draw_fn) {
+  float h = ImGui::GetFrameHeight();
+  bool pressed = ImGui::Button(str_id, ImVec2(h, h));
+  ImDrawList *dl = ImGui::GetWindowDrawList();
+  ImVec2 mn = ImGui::GetItemRectMin();
+  ImVec2 mx = ImGui::GetItemRectMax();
+  draw_fn(dl, mn, mx, ImGui::GetColorU32(ImGuiCol_Text));
+  return pressed;
+}
+
+static void drawPlayIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
+  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
+  float r = (mx.y - mn.y) * 0.28f;
+  dl->AddTriangleFilled(ImVec2(cx - r * 0.6f, cy - r), ImVec2(cx - r * 0.6f, cy + r), ImVec2(cx + r * 0.8f, cy), col);
+}
+
+static void drawPauseIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
+  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
+  float h = (mx.y - mn.y) * 0.28f;
+  float bw = (mx.x - mn.x) * 0.09f;
+  float gap = (mx.x - mn.x) * 0.08f;
+  dl->AddRectFilled(ImVec2(cx - gap - bw, cy - h), ImVec2(cx - gap, cy + h), col);
+  dl->AddRectFilled(ImVec2(cx + gap, cy - h), ImVec2(cx + gap + bw, cy + h), col);
+}
+
+static void drawRewindIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
+  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
+  float h = (mx.y - mn.y) * 0.26f;
+  float w = (mx.x - mn.x) * 0.22f;
+  float off = w * 0.05f;
+  dl->AddTriangleFilled(ImVec2(cx + off, cy - h), ImVec2(cx + off, cy + h), ImVec2(cx - w + off, cy), col);
+  dl->AddTriangleFilled(ImVec2(cx + w + off, cy - h), ImVec2(cx + w + off, cy + h), ImVec2(cx + off, cy), col);
+}
+
+static void drawFastForwardIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
+  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
+  float h = (mx.y - mn.y) * 0.26f;
+  float w = (mx.x - mn.x) * 0.22f;
+  float off = w * 0.05f;
+  dl->AddTriangleFilled(ImVec2(cx - w - off, cy - h), ImVec2(cx - w - off, cy + h), ImVec2(cx - off, cy), col);
+  dl->AddTriangleFilled(ImVec2(cx - off, cy - h), ImVec2(cx - off, cy + h), ImVec2(cx + w - off, cy), col);
+}
+
 }  // namespace
 
 void CabanaImguiApp::drawMessagesPanel(const ImVec2 &size) {
@@ -219,17 +266,15 @@ void CabanaImguiApp::drawMessagesPanel(const ImVec2 &size) {
         if (!item.active) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.60f, 0.60f, 1.0f));
 
         ImGui::TableSetColumnIndex(0);
+        // No hover highlight — only show selected/pressed state (matching Qt cabana)
+        if (!is_selected) {
+          ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+        }
         if (ImGui::Selectable(item.name.c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
           activateMessage(item.id);
         }
-        // Show name + DBC comment as tooltip (matching Qt's name column tooltip)
-        if (ImGui::IsItemHovered()) {
-          const auto *m = dbc()->msg(item.id);
-          if (m && !m->comment.empty()) {
-            ImGui::SetTooltip("%s\n%s", item.name.c_str(), m->comment.c_str());
-          } else {
-            ImGui::SetTooltip("%s", item.name.c_str());
-          }
+        if (!is_selected) {
+          ImGui::PopStyleColor();
         }
         if (ImGui::BeginPopupContextItem(("msg_ctx_" + item.id.toString()).c_str())) {
           activateMessage(item.id);
@@ -275,7 +320,8 @@ void CabanaImguiApp::drawMessagesPanel(const ImVec2 &size) {
         if (is_dbc_only) {
           ImGui::TextUnformatted("N/A");
         } else {
-          // Color-coded hex bytes matching Qt Cabana
+          // Color-coded hex bytes matching Qt Cabana (monospace so columns don't shift)
+          ImGui::PushFont(cabanaMonoFont());
           const auto &last = stream_ ? stream_->lastMessage(item.id) : CanData{};
           if (last.dat.empty()) {
             ImGui::TextUnformatted(item.data_hex.empty() ? "-" : item.data_hex.c_str());
@@ -304,6 +350,7 @@ void CabanaImguiApp::drawMessagesPanel(const ImVec2 &size) {
               }
             }
           }
+          ImGui::PopFont();
         }
         if (!item.active) ImGui::PopStyleColor();
         ImGui::PopID();
@@ -392,7 +439,7 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
   const ImVec2 image_min = ImGui::GetItemRectMin();
   const ImVec2 image_max = ImGui::GetItemRectMax();
   if (texture == 0) {
-    draw->AddRectFilled(image_min, image_max, IM_COL32(40, 40, 42, 255), 8.0f);
+    draw->AddRectFilled(image_min, image_max, IM_COL32(40, 40, 42, 255), 0.0f);
     const char *waiting_text = "Waiting for camera frames...";
     ImVec2 text_size = ImGui::CalcTextSize(waiting_text);
     draw->AddText(ImVec2((image_min.x + image_max.x - text_size.x) * 0.5f, (image_min.y + image_max.y - text_size.y) * 0.5f),
@@ -439,7 +486,7 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
             ImVec2 label_size = ImGui::CalcTextSize(time_label.c_str());
             draw->AddRectFilled(ImVec2(fill_pos.x, fill_pos.y + fill_size.y - label_size.y - 8),
                                 ImVec2(fill_pos.x + label_size.x + 12, fill_pos.y + fill_size.y),
-                                IM_COL32(0, 0, 0, 160), 4.0f);
+                                IM_COL32(0, 0, 0, 160), 3.0f);
             draw->AddText(ImVec2(fill_pos.x + 6, fill_pos.y + fill_size.y - label_size.y - 4),
                           IM_COL32(255, 255, 255, 220), time_label.c_str());
             if (Replay *r = replay()) {
@@ -462,7 +509,7 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
             ImVec2 label_size = ImGui::CalcTextSize(time_label.c_str());
             draw->AddRectFilled(ImVec2(tx, ty + th - label_size.y - 6),
                                 ImVec2(tx + label_size.x + 10, ty + th),
-                                IM_COL32(0, 0, 0, 160), 4.0f);
+                                IM_COL32(0, 0, 0, 160), 3.0f);
             draw->AddText(ImVec2(tx + 5, ty + th - label_size.y - 3),
                           IM_COL32(255, 255, 255, 220), time_label.c_str());
           }
@@ -482,7 +529,7 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
     ImGui::Dummy(image_size);
     const ImVec2 image_min = ImGui::GetItemRectMin();
     const ImVec2 image_max = ImGui::GetItemRectMax();
-    draw->AddRectFilled(image_min, image_max, IM_COL32(40, 40, 42, 255), 8.0f);
+    draw->AddRectFilled(image_min, image_max, IM_COL32(40, 40, 42, 255), 0.0f);
     if (auto alert = r->findAlertAtTime(stream_->currentSec())) {
       drawAlertOverlay(draw, *alert, image_min.x + 8.0f, image_min.y + 8.0f, image_size.x - 16.0f);
     } else {
@@ -502,13 +549,13 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
   ImGui::Spacing();
   if (!is_dummy) {
     const bool paused_ctrl = stream_ && stream_->isPaused();
-    if (ImGui::Button(paused_ctrl ? "Play" : "Pause")) {
+    if (iconButton(paused_ctrl ? "##play" : "##pause", paused_ctrl ? drawPlayIcon : drawPauseIcon)) {
       stream_->pause(!paused_ctrl);
     }
     ImGui::SameLine();
-    if (ImGui::Button("<< 1s")) stream_->seekTo(stream_->currentSec() - 1.0);
+    if (iconButton("##rewind", drawRewindIcon)) stream_->seekTo(stream_->currentSec() - 1.0);
     ImGui::SameLine();
-    if (ImGui::Button("1s >>")) stream_->seekTo(stream_->currentSec() + 1.0);
+    if (iconButton("##ffwd", drawFastForwardIcon)) stream_->seekTo(stream_->currentSec() + 1.0);
     if (stream_ && !stream_->liveStreaming()) {
       ImGui::SameLine();
       if (ImGui::Button("Route Info")) show_route_info_ = true;
@@ -573,7 +620,7 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
   if (Replay *r = replay()) {
     const ImVec2 slider_pos = ImGui::GetCursorScreenPos();
     const ImVec2 slider_size(ImGui::GetContentRegionAvail().x, 16.0f);
-    draw->AddRectFilled(slider_pos, ImVec2(slider_pos.x + slider_size.x, slider_pos.y + slider_size.y), packedColor(timeline_colors[(int)TimelineType::None]), 3.0f);
+    draw->AddRectFilled(slider_pos, ImVec2(slider_pos.x + slider_size.x, slider_pos.y + slider_size.y), packedColor(timeline_colors[(int)TimelineType::None]), 0.0f);
     if (const auto timeline = r->getTimeline()) {
       for (const auto &entry : *timeline) {
         float x0 = slider_pos.x + static_cast<float>((entry.start_time - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
@@ -767,7 +814,6 @@ void CabanaImguiApp::drawSignalsPanel(const ImVec2 &size) {
         if (ImGui::IsItemHovered()) {
           hovered_signal_name_ = sig->name;
           signal_hovered = true;
-          ImGui::SetTooltip("%s", signalToolTip(sig).c_str());
           if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             openSignalEditor(true);
           }
@@ -1270,4 +1316,3 @@ void CabanaImguiApp::drawSignalsPanel(const ImVec2 &size) {
   signals_panel_hovered_ = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
   ImGui::EndChild();
 }
-

@@ -211,7 +211,7 @@ void drawAlertOverlay(ImDrawList *draw, const Timeline::Entry &alert, float x, f
   std::string text = alert.text1;
   if (!alert.text2.empty()) text += "\n" + alert.text2;
   ImVec2 text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap_width);
-  draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + text_size.y + 12.0f), IM_COL32(qc.red(), qc.green(), qc.blue(), 190), 6.0f);
+  draw->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + text_size.y + 12.0f), IM_COL32(qc.red(), qc.green(), qc.blue(), 190), 3.0f);
   draw->AddText(font, font_size, ImVec2(x + 12.0f, y + 6.0f), IM_COL32(255, 255, 255, 255), text.c_str(), nullptr, wrap_width);
 }
 
@@ -375,13 +375,14 @@ void applyCabanaStyle(float scale) {
   ImGui::StyleColorsDark();
   ImGuiStyle &style = ImGui::GetStyle();
   style = ImGuiStyle();
-  style.WindowRounding = 6.0f;
-  style.ChildRounding = 4.0f;
-  style.FrameRounding = 4.0f;
-  style.GrabRounding = 4.0f;
-  style.ScrollbarRounding = 4.0f;
-  style.TabRounding = 4.0f;
-  style.PopupRounding = 4.0f;
+  // Qt Cabana mostly relied on palette + native widget chrome, so keep ImGui surfaces flatter.
+  style.WindowRounding = 0.0f;
+  style.ChildRounding = 0.0f;
+  style.FrameRounding = 1.0f;
+  style.GrabRounding = 1.0f;
+  style.ScrollbarRounding = 1.0f;
+  style.TabRounding = 0.0f;
+  style.PopupRounding = 0.0f;
   style.WindowPadding = ImVec2(10.0f, 8.0f);
   style.FramePadding = ImVec2(5.0f, 3.0f);
   style.ItemSpacing = ImVec2(8.0f, 6.0f);
@@ -392,7 +393,6 @@ void applyCabanaStyle(float scale) {
   const ImVec4 window_bg(0.208f, 0.208f, 0.208f, 1.0f);      // #353535
   const ImVec4 base_bg(0.235f, 0.247f, 0.255f, 1.0f);         // #3c3f41
   const ImVec4 text_color(0.733f, 0.733f, 0.733f, 1.0f);      // #bbbbbb
-  const ImVec4 bright_text(0.941f, 0.941f, 0.941f, 1.0f);     // #f0f0f0
   const ImVec4 disabled_text(0.60f, 0.60f, 0.60f, 1.0f);       // #999999
   const ImVec4 highlight(0.184f, 0.396f, 0.792f, 1.0f);       // #2f65ca
   const ImVec4 highlight_hover(0.25f, 0.47f, 0.85f, 1.0f);
@@ -445,13 +445,13 @@ void applyCabanaLightStyle(float scale) {
   ImGuiStyle &style = ImGui::GetStyle();
   style = ImGuiStyle();  // Reset to defaults before scaling (matches dark theme path)
   ImGui::StyleColorsLight();  // Apply light palette after reset
-  style.WindowRounding = 6.0f;
-  style.ChildRounding = 4.0f;
-  style.FrameRounding = 4.0f;
-  style.GrabRounding = 4.0f;
-  style.ScrollbarRounding = 4.0f;
-  style.TabRounding = 4.0f;
-  style.PopupRounding = 4.0f;
+  style.WindowRounding = 0.0f;
+  style.ChildRounding = 0.0f;
+  style.FrameRounding = 1.0f;
+  style.GrabRounding = 1.0f;
+  style.ScrollbarRounding = 1.0f;
+  style.TabRounding = 0.0f;
+  style.PopupRounding = 0.0f;
   style.WindowPadding = ImVec2(10.0f, 8.0f);
   style.FramePadding = ImVec2(5.0f, 3.0f);
   style.ItemSpacing = ImVec2(8.0f, 6.0f);
@@ -498,6 +498,10 @@ static std::string resolveFontFile(const std::string &family, bool monospace = f
   return popenReadLine("fc-match -f '%{file}' '" + pattern + "' 2>/dev/null");
 }
 
+static ImFont *s_mono_font = nullptr;
+
+ImFont *cabanaMonoFont() { return s_mono_font ? s_mono_font : ImGui::GetFont(); }
+
 void loadCabanaFonts() {
   ImGuiIO &io = ImGui::GetIO();
   io.Fonts->Clear();
@@ -517,6 +521,16 @@ void loadCabanaFonts() {
   if (!io.FontDefault) {
     io.FontDefault = io.Fonts->AddFontDefault();
   }
+
+  // Load monospace font for hex byte display
+  const std::string mono_path = resolveFontFile("monospace", true);
+  if (!mono_path.empty()) {
+    s_mono_font = io.Fonts->AddFontFromFileTTF(mono_path.c_str(), font_px, &config);
+  }
+  if (!s_mono_font) {
+    s_mono_font = io.FontDefault;
+  }
+
   io.FontGlobalScale = 1.0f;
 }
 

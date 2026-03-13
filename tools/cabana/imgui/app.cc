@@ -558,6 +558,11 @@ int CabanaImguiApp::run() {
       SDL_SetWindowTitle(window, title.c_str());
     }
 
+    // Clamp accumulated scroll to prevent non-linear acceleration when spinning the wheel fast
+    // (multiple SDL_MOUSEWHEEL events per frame cause progressively larger jumps)
+    io.MouseWheel = std::clamp(io.MouseWheel, -3.0f, 3.0f);
+    io.MouseWheelH = std::clamp(io.MouseWheelH, -3.0f, 3.0f);
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
     draw();
@@ -789,7 +794,7 @@ void CabanaImguiApp::draw() {
             " (" + (file ? file->name().empty() ? "untitled" : file->name() : "No DBC loaded") + ")";
           if (ImGui::BeginMenu(bus_label.c_str())) {
             if (ImGui::MenuItem("New DBC...")) {
-              auto action = [this, ss] { dbc()->close(ss); dbc()->open(ss, std::string(""), std::string("")); };
+              auto action = [ss] { dbc()->close(ss); dbc()->open(ss, std::string(""), std::string("")); };
               if (confirmOrPromptUnsaved(action)) action();
             }
             if (ImGui::MenuItem("Open DBC...")) {
@@ -884,14 +889,14 @@ void CabanaImguiApp::draw() {
                 setStatusMessage("DBC copied to clipboard");
               }
               if (ImGui::MenuItem("Remove from this bus")) {
-                auto action = [this, ss] {
+                auto action = [ss] {
                   dbc()->close(ss);
                   if (dbc()->dbcCount() == 0) dbc()->open(SOURCE_ALL, std::string(""), std::string(""));
                 };
                 if (confirmOrPromptUnsaved(action)) action();
               }
               if (ImGui::MenuItem("Remove from all buses")) {
-                auto action = [this, file] {
+                auto action = [file] {
                   dbc()->close(file);
                   if (dbc()->dbcCount() == 0) dbc()->open(SOURCE_ALL, std::string(""), std::string(""));
                 };
@@ -1025,7 +1030,7 @@ void CabanaImguiApp::draw() {
   drawUnsavedPrompt();
 
   const ImVec2 avail = ImGui::GetContentRegionAvail();
-  const float split_t = 6.0f;  // splitter thickness
+  const float split_t = 4.0f;  // splitter thickness
   const float content_h = std::max(200.0f, avail.y);
   const int num_vsplits = show_messages_ ? 2 : 1;
   const float usable_w = avail.x - split_t * num_vsplits;
@@ -1047,6 +1052,7 @@ void CabanaImguiApp::draw() {
   const float right_bottom_h = std::max(100.0f, content_h - right_top_h - split_t);
 
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
 
   if (show_messages_) {
     { auto p = ImGui::GetCursorScreenPos(); panel_messages_ = {p.x, p.y, left_w, content_h}; }
@@ -1116,7 +1122,7 @@ void CabanaImguiApp::draw() {
   }
   ImGui::EndGroup();
 
-  ImGui::PopStyleVar();  // ItemSpacing
+  ImGui::PopStyleVar(2);  // WindowPadding, ItemSpacing
 
   // Floating charts window (separate ImGui window when charts are popped out)
   if (charts_floating_ && show_charts_) {
@@ -2382,7 +2388,7 @@ void CabanaImguiApp::draw() {
       float cy = r.y + r.h * 0.5f;
       ImVec2 box_min(cx - (std::max(text_size.x, title_size.x) + pad * 2) * 0.5f, cy - (total_h + pad * 2) * 0.5f);
       ImVec2 box_max(cx + (std::max(text_size.x, title_size.x) + pad * 2) * 0.5f, cy + (total_h + pad * 2) * 0.5f);
-      fg->AddRectFilled(box_min, box_max, IM_COL32(30, 30, 35, 220), 6.0f);
+      fg->AddRectFilled(box_min, box_max, IM_COL32(30, 30, 35, 220), 0.0f);
       fg->AddText(ImVec2(cx - title_size.x * 0.5f, box_min.y + pad), IM_COL32(130, 200, 255, 255), title);
       fg->AddText(nullptr, 0.0f, ImVec2(box_min.x + pad, box_min.y + pad + title_size.y + 6.0f),
                   IM_COL32(220, 220, 220, 255), text, nullptr, r.w - pad * 2);
@@ -2425,7 +2431,7 @@ void CabanaImguiApp::draw() {
     float sc_x = (display.x - sc_size.x) * 0.5f;
     float sc_y = 40.0f;
     fg->AddRectFilled(ImVec2(sc_x - 10, sc_y - 6), ImVec2(sc_x + sc_size.x + 10, sc_y + sc_size.y + 6),
-                      IM_COL32(30, 30, 35, 220), 6.0f);
+                      IM_COL32(30, 30, 35, 220), 0.0f);
     fg->AddText(ImVec2(sc_x, sc_y), IM_COL32(180, 180, 180, 255), shortcuts);
 
     // "Click anywhere to close" hint at bottom
@@ -2448,7 +2454,7 @@ void CabanaImguiApp::draw() {
     ImVec2 hint_size = ImGui::CalcTextSize(hint);
     fg->AddRectFilled(ImVec2((display.x - hint_size.x) * 0.5f - 8, 38),
                       ImVec2((display.x + hint_size.x) * 0.5f + 8, 38 + hint_size.y + 12),
-                      IM_COL32(30, 30, 35, 220), 6.0f);
+                      IM_COL32(30, 30, 35, 220), 0.0f);
     fg->AddText(ImVec2((display.x - hint_size.x) * 0.5f, 44), IM_COL32(180, 180, 180, 255), hint);
 
     // Per-panel help text (matches Qt's whatsThis() content)

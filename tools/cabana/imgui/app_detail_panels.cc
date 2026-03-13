@@ -1089,7 +1089,7 @@ void CabanaImguiApp::drawBinaryPanel(const ImVec2 &size) {
           exportToCsvDialog(id);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Close Tab", nullptr, false, detail_tabs_.size() > 1)) {
+        if (ImGui::MenuItem("Close Tab")) {
           remove_index = i;
         }
         if (ImGui::MenuItem("Close Other Tabs", nullptr, false, detail_tabs_.size() > 1)) {
@@ -1109,8 +1109,13 @@ void CabanaImguiApp::drawBinaryPanel(const ImVec2 &size) {
     if (remove_index >= 0) {
       const bool removing_selected = has_selected_id_ && detail_tabs_[remove_index] == selected_id_;
       detail_tabs_.erase(detail_tabs_.begin() + remove_index);
-      if (removing_selected && !detail_tabs_.empty()) {
-        selected_id_ = detail_tabs_[std::min(remove_index, static_cast<int>(detail_tabs_.size()) - 1)];
+      if (removing_selected) {
+        if (!detail_tabs_.empty()) {
+          selected_id_ = detail_tabs_[std::min(remove_index, static_cast<int>(detail_tabs_.size()) - 1)];
+        } else {
+          has_selected_id_ = false;
+          selected_id_ = {};
+        }
       }
       ensureDetailTabs();
     }
