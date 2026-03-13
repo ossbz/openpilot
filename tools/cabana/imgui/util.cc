@@ -63,7 +63,9 @@ std::string getExeDir() {
   }
   return ".";
 #else
-  return std::filesystem::read_symlink("/proc/self/exe").parent_path().string();
+  std::error_code ec;
+  auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+  return ec ? "." : exe.parent_path().string();
 #endif
 }
 

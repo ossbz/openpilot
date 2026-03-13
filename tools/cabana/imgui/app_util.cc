@@ -17,6 +17,7 @@
 #include "imgui.h"
 #include "implot.h"
 #include "third_party/json11/json11.hpp"
+#include "common/util.h"
 #include "tools/cabana/imgui/settings.h"
 #include "tools/cabana/imgui/util.h"
 
@@ -98,18 +99,9 @@ bool hasNativeFileDialogs() {
 #endif
 }
 
-// Run a shell command, read one line of stdout, and return it trimmed.
+// Run a shell command, capture stdout, and return it trimmed.
 static std::string popenReadLine(const std::string &cmd) {
-  FILE *f = popen(cmd.c_str(), "r");
-  if (!f) return {};
-  char buf[2048] = {};
-  std::string result;
-  if (fgets(buf, sizeof(buf), f)) {
-    result = buf;
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
-  }
-  pclose(f);
-  return result;
+  return util::strip(util::check_output(cmd));
 }
 
 // Build the platform-specific command for a file dialog, or return empty if no tool is available.
@@ -125,7 +117,15 @@ static std::string buildDialogCommand(DialogMode mode, const std::string &title,
   } else {
     cmd = "osascript -e 'POSIX path of (choose file";
   }
-  if (!title.empty()) cmd += " with prompt \"" + title + "\"";
+  if (!title.empty()) {
+    // Escape backslashes and double quotes for AppleScript string
+    std::string safe_title;
+    for (char c : title) {
+      if (c == '\\' || c == '"') safe_title += '\\';
+      safe_title += c;
+    }
+    cmd += " with prompt \"" + safe_title + "\"";
+  }
   cmd += ")'";
 #else
   if (hasCommand("zenity")) {

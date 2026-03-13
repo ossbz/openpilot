@@ -10,11 +10,6 @@
 
 #include "common/util.h"
 
-// Aliases for common/util.h helpers
-static inline std::string trim(const std::string &s) { return util::strip(s); }
-static inline bool startsWith(const std::string &s, const std::string &prefix) { return util::starts_with(s, prefix); }
-static inline bool endsWith(const std::string &s, const std::string &suffix) { return util::ends_with(s, suffix); }
-
 // Helper: get basename without extension
 static std::string baseName(const std::string &path) {
   auto p = std::filesystem::path(path);
@@ -109,21 +104,21 @@ void DBCFile::parse(const std::string &content) {
     if (!raw_line.empty() && raw_line.back() == '\r') {
       raw_line.pop_back();
     }
-    std::string line = trim(raw_line);
+    std::string line = util::strip(raw_line);
 
     bool seen = true;
     try {
-      if (startsWith(line, "BO_ ")) {
+      if (util::starts_with(line, "BO_ ")) {
         multiplexor_cnt = 0;
         current_msg = parseBO(line);
-      } else if (startsWith(line, "SG_ ")) {
+      } else if (util::starts_with(line, "SG_ ")) {
         parseSG(line, current_msg, multiplexor_cnt);
-      } else if (startsWith(line, "VAL_ ")) {
+      } else if (util::starts_with(line, "VAL_ ")) {
         parseVAL(line);
-      } else if (startsWith(line, "CM_ BO_")) {
+      } else if (util::starts_with(line, "CM_ BO_")) {
         // For multi-line comments, accumulate until we find ";
         std::string cm_line = line;
-        while (!endsWith(cm_line, "\";") && !stream.eof()) {
+        while (!util::ends_with(cm_line, "\";") && !stream.eof()) {
           std::string next_line;
           std::getline(stream, next_line);
           if (!next_line.empty() && next_line.back() == '\r') next_line.pop_back();
@@ -131,9 +126,9 @@ void DBCFile::parse(const std::string &content) {
           ++line_num;
         }
         parseCM_BO(cm_line);
-      } else if (startsWith(line, "CM_ SG_ ")) {
+      } else if (util::starts_with(line, "CM_ SG_ ")) {
         std::string cm_line = line;
-        while (!endsWith(cm_line, "\";") && !stream.eof()) {
+        while (!util::ends_with(cm_line, "\";") && !stream.eof()) {
           std::string next_line;
           std::getline(stream, next_line);
           if (!next_line.empty() && next_line.back() == '\r') next_line.pop_back();
@@ -181,7 +176,7 @@ cabana::Msg *DBCFile::parseBO(const std::string &line) {
   msg->address = address;
   msg->name = match[2].str();
   msg->size = std::stoul(match[3].str());
-  msg->transmitter = trim(match[4].str());
+  msg->transmitter = util::strip(match[4].str());
   return msg;
 }
 
@@ -228,7 +223,7 @@ void DBCFile::parseSG(const std::string &line, cabana::Msg *current_msg, int &mu
   s.min = std::stod(match[offset + 8].str());
   s.max = std::stod(match[offset + 9].str());
   s.unit = match[offset + 10].str();
-  s.receiver_name = trim(match[offset + 11].str());
+  s.receiver_name = util::strip(match[offset + 11].str());
   current_msg->sigs.push_back(new cabana::Signal(s));
 }
 
@@ -240,7 +235,7 @@ void DBCFile::parseCM_BO(const std::string &line) {
     throw std::runtime_error("Invalid message comment format");
 
   if (auto m = msg(std::stoul(match[1].str())))
-    m->comment = trim(replaceAll(match[2].str(), "\\\"", "\""));
+    m->comment = util::strip(replaceAll(match[2].str(), "\\\"", "\""));
 }
 
 void DBCFile::parseCM_SG(const std::string &line) {
@@ -251,7 +246,7 @@ void DBCFile::parseCM_SG(const std::string &line) {
     throw std::runtime_error("Invalid CM_ SG_ line format");
 
   if (auto s = signal(std::stoul(match[1].str()), match[2].str())) {
-    s->comment = trim(replaceAll(match[3].str(), "\\\"", "\""));
+    s->comment = util::strip(replaceAll(match[3].str(), "\\\"", "\""));
   }
 }
 
@@ -264,7 +259,7 @@ void DBCFile::parseVAL(const std::string &line) {
 
   if (auto s = signal(std::stoul(match[1].str()), match[2].str())) {
     // Split by quotes to get value-description pairs
-    std::string desc_str = trim(match[3].str());
+    std::string desc_str = util::strip(match[3].str());
     // Parse pairs: number "description" number "description" ...
     size_t pos = 0;
     while (pos < desc_str.size()) {
@@ -275,7 +270,7 @@ void DBCFile::parseVAL(const std::string &line) {
       // Read number
       size_t num_start = pos;
       while (pos < desc_str.size() && !std::isspace(desc_str[pos]) && desc_str[pos] != '"') ++pos;
-      std::string num_str = trim(desc_str.substr(num_start, pos - num_start));
+      std::string num_str = util::strip(desc_str.substr(num_start, pos - num_start));
       if (num_str.empty()) break;
 
       // Skip whitespace
@@ -289,7 +284,7 @@ void DBCFile::parseVAL(const std::string &line) {
       std::string desc = desc_str.substr(desc_start, pos - desc_start);
       if (pos < desc_str.size()) ++pos; // skip closing quote
 
-      s->val_desc.push_back({std::stod(num_str), trim(desc)});
+      s->val_desc.push_back({std::stod(num_str), util::strip(desc)});
     }
   }
 }
