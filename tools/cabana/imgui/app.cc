@@ -3,8 +3,7 @@
 #include "tools/cabana/imgui/app_video_state.h"
 #include "tools/cabana/imgui/icons.h"
 
-#include <SDL.h>
-#include <SDL_opengl.h>
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <array>
@@ -30,6 +29,7 @@
 #include "third_party/json11/json11.hpp"
 
 #include "imgui.h"
+#include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "implot.h"
 #include "msgq/visionipc/visionipc_client.h"
@@ -62,14 +62,6 @@ constexpr int kWindowHeight = 980;
 constexpr int kStartupSortColumn = 0;  // Name column (matches Qt's default ascending)
 constexpr char kWindowTitle[] = "cabana";
 
-
-const char *getClipboardText(void *) {
-  static std::string clipboard;
-  char *text = SDL_GetClipboardText();
-  clipboard = text ? text : "";
-  SDL_free(text);
-  return clipboard.c_str();
-}
 
 }  // namespace
 
@@ -295,47 +287,46 @@ void CabanaImguiApp::replaceStream(AbstractStream *stream, const std::string &db
   }
 }
 
+static void glfwErrorCallback(int error, const char *description) {
+  fprintf(stderr, "GLFW error %d: %s\n", error, description);
+}
+
 int CabanaImguiApp::run() {
   clearCabanaShutdownRequested();
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-    SDL_Log("SDL_Init failed: %s", SDL_GetError());
+  glfwSetErrorCallback(glfwErrorCallback);
+  if (!glfwInit()) {
+    fprintf(stderr, "glfwInit failed\n");
     return 1;
   }
 
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#ifdef __APPLE__
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#endif
 
-  int win_x = (settings.window_x >= 0) ? settings.window_x : SDL_WINDOWPOS_CENTERED;
-  int win_y = (settings.window_y >= 0) ? settings.window_y : SDL_WINDOWPOS_CENTERED;
   int win_w = (settings.window_width > 0) ? settings.window_width : kWindowWidth;
   int win_h = (settings.window_height > 0) ? settings.window_height : kWindowHeight;
-  SDL_Window *window = SDL_CreateWindow(kWindowTitle, win_x, win_y, win_w, win_h,
-                                        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+  GLFWwindow *window = glfwCreateWindow(win_w, win_h, kWindowTitle, nullptr, nullptr);
   if (!window) {
-    SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError());
-    SDL_Quit();
+    fprintf(stderr, "glfwCreateWindow failed\n");
+    glfwTerminate();
     return 1;
+  }
+  glfw_window_ = window;
+
+  // Restore window position
+  if (settings.window_x >= 0 && settings.window_y >= 0) {
+    glfwSetWindowPos(window, settings.window_x, settings.window_y);
   }
   // Restore maximized state (matches Qt's geometry/window_state restore)
   if (settings.window_maximized) {
-    SDL_MaximizeWindow(window);
+    glfwMaximizeWindow(window);
   }
 
-  SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-  if (!gl_context) {
-    SDL_Log("SDL_GL_CreateContext failed: %s", SDL_GetError());
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return 1;
-  }
-
-  SDL_GL_MakeCurrent(window, gl_context);
-  SDL_GL_SetSwapInterval(1);
+  glfwMakeContextCurrent(window);
+  glfwSwapInterval(1);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -343,10 +334,6 @@ int CabanaImguiApp::run() {
 
   ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-  io.BackendPlatformName = "cabana_sdl2_custom";
-  io.SetClipboardTextFn = setClipboardText;
-  io.GetClipboardTextFn = getClipboardText;
-  io.ClipboardUserData = nullptr;
   static std::string ini_path = homeDir() + "/.cabana.ini";
   io.IniFilename = ini_path.c_str();
 
@@ -354,196 +341,47 @@ int CabanaImguiApp::run() {
   applyCabanaTheme(settings.theme, cabanaUiScale());
   initBootstrapIcons((getExeDir() + "/../../third_party/bootstrap/bootstrap-icons.svg").c_str());
 
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
   if (!ImGui_ImplOpenGL3_Init("#version 330")) {
+    ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext();
     ImGui::DestroyContext();
-    SDL_GL_DeleteContext(gl_context);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    glfwDestroyWindow(window);
+    glfwTerminate();
     return 1;
   }
 
-  SDL_StartTextInput();
+  // Set up mouse button callback chain for back-button chart zoom undo
+  glfwSetWindowUserPointer(window, this);
 
-  while (!exit_requested_) {
+  while (!exit_requested_ && !glfwWindowShouldClose(window)) {
     if (stream_) stream_->pollUpdates();
     if (cabanaShutdownRequested()) {
       exit_requested_ = true;
     }
 
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      switch (event.type) {
-        case SDL_QUIT:
-          if (confirmOrPromptUnsaved([this] { exit_requested_ = true; })) exit_requested_ = true;
-          break;
-        case SDL_WINDOWEVENT:
-          if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
-            if (confirmOrPromptUnsaved([this] { exit_requested_ = true; })) exit_requested_ = true;
-          } else if (event.window.event == SDL_WINDOWEVENT_LEAVE) {
-            io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
-          } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
-            io.AddFocusEvent(true);
-          } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-            io.AddFocusEvent(false);
-          }
-          break;
-        case SDL_MOUSEMOTION:
-          io.AddMousePosEvent(static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
-          break;
-        case SDL_MOUSEWHEEL:
-          if (io.KeyShift) {
-            // Shift+wheel → horizontal scroll (matches Qt's MessageView::wheelEvent and general Qt behavior)
-            io.AddMouseWheelEvent(static_cast<float>(event.wheel.y), 0.0f);
-          } else {
-            io.AddMouseWheelEvent(static_cast<float>(event.wheel.x), static_cast<float>(event.wheel.y));
-          }
-          break;
-        case SDL_MOUSEBUTTONDOWN:
-        case SDL_MOUSEBUTTONUP: {
-          int button = mapMouseButton(event.button.button);
-          if (button >= 0) io.AddMouseButtonEvent(button, event.type == SDL_MOUSEBUTTONDOWN);
-          // Mouse back button → chart zoom undo (matches Qt's BackButton mapping)
-          if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_X1) {
-            if (!chart_zoom_history_.empty()) {
-              chart_zoom_redo_.push_back(chart_range_);
-              chart_range_ = chart_zoom_history_.back();
-              chart_zoom_history_.pop_back();
-              if (chart_range_) stream_->setTimeRange(chart_range_);
-              else stream_->setTimeRange(std::nullopt);
-            }
-          }
-          break;
-        }
-        case SDL_TEXTINPUT:
-          io.AddInputCharactersUTF8(event.text.text);
-          break;
-        case SDL_KEYDOWN:
-        case SDL_KEYUP: {
-          updateKeyMods(io, static_cast<SDL_Keymod>(event.key.keysym.mod));
-          ImGuiKey key = mapSdlKey(event.key.keysym.sym);
-          if (key != ImGuiKey_None) {
-            const bool pressed = event.type == SDL_KEYDOWN;
-            io.AddKeyEvent(key, pressed);
-            io.SetKeyEventNativeData(key, event.key.keysym.sym, event.key.keysym.scancode, event.key.keysym.scancode);
-            if (pressed) {
-              // Global shortcuts: work even when text input is focused (matching Qt's QAction behavior)
-              bool handled = true;
-              if ((event.key.keysym.mod & KMOD_CTRL) && !(event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_N) {
-                auto action = [this] { dbc()->closeAll(); dbc()->open(SOURCE_ALL, std::string(""), std::string("")); setStatusMessage("New DBC file created"); };
-                if (confirmOrPromptUnsaved(action)) action();
-              } else if ((event.key.keysym.mod & KMOD_CTRL) && !(event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_O) {
-                auto action = [this] { openDbcFileDialog(); };
-                if (confirmOrPromptUnsaved(action)) action();
-              } else if ((event.key.keysym.mod & KMOD_CTRL) && !(event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_S) {
-                saveDbc(false);
-              } else if ((event.key.keysym.mod & KMOD_CTRL) && (event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_S) {
-                saveDbc(true);
-              } else if ((event.key.keysym.mod & KMOD_CTRL) && key == ImGuiKey_Q) {
-                if (confirmOrPromptUnsaved([this] { exit_requested_ = true; })) exit_requested_ = true;
-              } else if ((event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_F1) {
-                whats_this_mode_ = !whats_this_mode_;
-                show_help_ = false;
-              } else if (key == ImGuiKey_F1) {
-                show_help_ = !show_help_;
-                whats_this_mode_ = false;
-              } else if (key == ImGuiKey_F11) {
-                Uint32 flags = SDL_GetWindowFlags(window);
-                SDL_SetWindowFullscreen(window, (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-              } else {
-                handled = false;
-              }
-              // Context shortcuts: only when not in text input (to avoid eating typed characters)
-              if (!handled && !io.WantTextInput) {
-              if ((event.key.keysym.mod & KMOD_CTRL) && !(event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_Z) {
-                UndoStack::instance()->undo();
-              } else if ((event.key.keysym.mod & KMOD_CTRL) && (event.key.keysym.mod & KMOD_SHIFT) && key == ImGuiKey_Z) {
-                UndoStack::instance()->redo();
-              } else
-              if (key == ImGuiKey_Space) {
-                if (stream_) stream_->pause(!stream_->isPaused());
-              } else if (key == ImGuiKey_LeftArrow) {
-                if (stream_) stream_->seekTo(stream_->currentSec() - 1.0);
-              } else if (key == ImGuiKey_RightArrow) {
-                if (stream_) stream_->seekTo(stream_->currentSec() + 1.0);
-              } else if (binary_panel_hovered_ && key == ImGuiKey_A) {
-                openSignalEditor(false);
-              } else if ((binary_panel_hovered_ || signals_panel_hovered_) && (key == ImGuiKey_Enter || key == ImGuiKey_KeypadEnter)) {
-                openSignalEditor(true);
-              } else if (binary_panel_hovered_ && (key == ImGuiKey_C || key == ImGuiKey_G || key == ImGuiKey_P)) {
-                // Use hovered signal if available (Qt operates on hovered in binary view)
-                const auto *target = hoveredSignal();
-                if (!target) target = selectedSignal();
-                if (target && has_selected_id_) showChart(selected_id_, target, true, false);
-              } else if (binary_panel_hovered_ && (key == ImGuiKey_X || key == ImGuiKey_Delete || key == ImGuiKey_Backspace)) {
-                const auto *target = hoveredSignal();
-                if (target) {
-                  selected_signal_name_ = target->name;
-                  removeSelectedSignal();
-                } else {
-                  removeSelectedSignal();
-                }
-              } else if (binary_panel_hovered_ && key == ImGuiKey_E) {
-                const auto *target = hoveredSignal();
-                if (!target) target = selectedSignal();
-                if (target) {
-                  std::string prev_sel = selected_signal_name_;
-                  selected_signal_name_ = target->name;
-                  updateSignalEndian(!target->is_little_endian);
-                  selected_signal_name_ = prev_sel;
-                }
-              } else if (binary_panel_hovered_ && key == ImGuiKey_S) {
-                const auto *target = hoveredSignal();
-                if (!target) target = selectedSignal();
-                if (target) {
-                  std::string prev_sel = selected_signal_name_;
-                  selected_signal_name_ = target->name;
-                  updateSignalSigned(!target->is_signed);
-                  selected_signal_name_ = prev_sel;
-                }
-              } else if (key == ImGuiKey_Equal || key == ImGuiKey_KeypadAdd) {
-                // Zoom in chart
-                if (stream_ && chart_range_) {
-                  double center = (chart_range_->first + chart_range_->second) * 0.5;
-                  double width = (chart_range_->second - chart_range_->first) * 0.8;
-                  updateChartRange(center, width);
-                }
-              } else if (key == ImGuiKey_Minus || key == ImGuiKey_KeypadSubtract) {
-                // Zoom out chart
-                if (stream_ && chart_range_) {
-                  double center = (chart_range_->first + chart_range_->second) * 0.5;
-                  double width = (chart_range_->second - chart_range_->first) * 1.25;
-                  updateChartRange(center, width);
-                }
-              } else if (key == ImGuiKey_Home) {
-                if (stream_) stream_->seekTo(stream_->minSeconds());
-              } else if (key == ImGuiKey_End) {
-                if (stream_) stream_->seekTo(stream_->maxSeconds());
-              }
-              } // end context shortcuts
-            }
-          }
-          break;
-        }
+    glfwPollEvents();
+
+    // Handle global keyboard shortcuts via ImGui key state (GLFW backend feeds keys automatically)
+    handleKeyboardShortcuts(window);
+
+    // Mouse back button → chart zoom undo (matches Qt's BackButton mapping)
+    if (ImGui::IsMouseClicked(3)) {  // button 3 = X1/Back
+      if (!chart_zoom_history_.empty()) {
+        chart_zoom_redo_.push_back(chart_range_);
+        chart_range_ = chart_zoom_history_.back();
+        chart_zoom_history_.pop_back();
+        if (chart_range_) stream_->setTimeRange(chart_range_);
+        else stream_->setTimeRange(std::nullopt);
       }
     }
 
     refreshState();
 
-    int window_width = 0;
-    int window_height = 0;
-    int drawable_width = 0;
-    int drawable_height = 0;
-    SDL_GetWindowSize(window, &window_width, &window_height);
-    SDL_GL_GetDrawableSize(window, &drawable_width, &drawable_height);
-
-    auto now = std::chrono::steady_clock::now();
-    std::chrono::duration<float> delta = now - last_frame_time_;
-    last_frame_time_ = now;
-    io.DisplaySize = ImVec2(static_cast<float>(window_width), static_cast<float>(window_height));
-    io.DisplayFramebufferScale = ImVec2(window_width > 0 ? static_cast<float>(drawable_width) / window_width : 1.0f,
-                                        window_height > 0 ? static_cast<float>(drawable_height) / window_height : 1.0f);
-    io.DeltaTime = std::max(delta.count(), 1.0f / 240.0f);
+    int window_width = 0, window_height = 0;
+    int drawable_width = 0, drawable_height = 0;
+    glfwGetWindowSize(window, &window_width, &window_height);
+    glfwGetFramebufferSize(window, &drawable_width, &drawable_height);
 
     // Update window title with all open DBC files and dirty state (matches Qt's DBCFileChanged)
     {
@@ -557,15 +395,11 @@ int CabanaImguiApp::run() {
       }
       if (!dbc_names.empty()) title += " - " + dbc_names;
       if (!UndoStack::instance()->isClean()) title += " *";
-      SDL_SetWindowTitle(window, title.c_str());
+      glfwSetWindowTitle(window, title.c_str());
     }
 
-    // Clamp accumulated scroll to prevent non-linear acceleration when spinning the wheel fast
-    // (multiple SDL_MOUSEWHEEL events per frame cause progressively larger jumps)
-    io.MouseWheel = std::clamp(io.MouseWheel, -3.0f, 3.0f);
-    io.MouseWheelH = std::clamp(io.MouseWheelH, -3.0f, 3.0f);
-
     ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     draw();
     ImGui::Render();
@@ -575,17 +409,15 @@ int CabanaImguiApp::run() {
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     maybeCaptureScreenshot(drawable_width, drawable_height);
-    SDL_GL_SwapWindow(window);
+    glfwSwapBuffers(window);
   }
 
-  SDL_StopTextInput();
   // Save window geometry for restart persistence
   {
     int wx, wy, ww, wh;
-    SDL_GetWindowPosition(window, &wx, &wy);
-    SDL_GetWindowSize(window, &ww, &wh);
-    Uint32 wflags = SDL_GetWindowFlags(window);
-    settings.window_maximized = (wflags & SDL_WINDOW_MAXIMIZED) != 0;
+    glfwGetWindowPos(window, &wx, &wy);
+    glfwGetWindowSize(window, &ww, &wh);
+    settings.window_maximized = glfwGetWindowAttrib(window, GLFW_MAXIMIZED) != 0;
     // Only save position/size if not maximized (restore to normal geometry when un-maximizing)
     if (!settings.window_maximized) {
       settings.window_x = wx;
@@ -599,11 +431,12 @@ int CabanaImguiApp::run() {
   clearThumbnails();
   video_.reset();
   ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
   ImPlot::DestroyContext();
   ImGui::DestroyContext();
-  SDL_GL_DeleteContext(gl_context);
-  SDL_DestroyWindow(window);
-  SDL_Quit();
+  glfwDestroyWindow(window);
+  glfw_window_ = nullptr;
+  glfwTerminate();
   shutdown();
   return 0;
 }
@@ -613,6 +446,126 @@ void CabanaImguiApp::clearThumbnails() {
     if (t.tex_id) { GLuint id = t.tex_id; glDeleteTextures(1, &id); }
   }
   thumbnails_.clear();
+}
+
+void CabanaImguiApp::handleKeyboardShortcuts(GLFWwindow *window) {
+  ImGuiIO &io = ImGui::GetIO();
+
+  // Check each shortcut via ImGui's key state (GLFW backend feeds keys automatically)
+  auto keyPressed = [&](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+
+  // Global shortcuts: work even when text input is focused (matching Qt's QAction behavior)
+  bool handled = false;
+  if (io.KeyCtrl && !io.KeyShift && keyPressed(ImGuiKey_N)) {
+    auto action = [this] { dbc()->closeAll(); dbc()->open(SOURCE_ALL, std::string(""), std::string("")); setStatusMessage("New DBC file created"); };
+    if (confirmOrPromptUnsaved(action)) action();
+    handled = true;
+  } else if (io.KeyCtrl && !io.KeyShift && keyPressed(ImGuiKey_O)) {
+    auto action = [this] { openDbcFileDialog(); };
+    if (confirmOrPromptUnsaved(action)) action();
+    handled = true;
+  } else if (io.KeyCtrl && !io.KeyShift && keyPressed(ImGuiKey_S)) {
+    saveDbc(false);
+    handled = true;
+  } else if (io.KeyCtrl && io.KeyShift && keyPressed(ImGuiKey_S)) {
+    saveDbc(true);
+    handled = true;
+  } else if (io.KeyCtrl && keyPressed(ImGuiKey_Q)) {
+    if (confirmOrPromptUnsaved([this] { exit_requested_ = true; })) exit_requested_ = true;
+    handled = true;
+  } else if (io.KeyShift && keyPressed(ImGuiKey_F1)) {
+    whats_this_mode_ = !whats_this_mode_;
+    show_help_ = false;
+    handled = true;
+  } else if (keyPressed(ImGuiKey_F1)) {
+    show_help_ = !show_help_;
+    whats_this_mode_ = false;
+    handled = true;
+  } else if (keyPressed(ImGuiKey_F11)) {
+    GLFWmonitor *monitor = glfwGetWindowMonitor(window);
+    if (monitor) {
+      // Currently fullscreen → restore to windowed
+      glfwSetWindowMonitor(window, nullptr,
+                           settings.window_x >= 0 ? settings.window_x : 100,
+                           settings.window_y >= 0 ? settings.window_y : 100,
+                           settings.window_width > 0 ? settings.window_width : kWindowWidth,
+                           settings.window_height > 0 ? settings.window_height : kWindowHeight, 0);
+    } else {
+      // Currently windowed → go fullscreen on primary monitor
+      GLFWmonitor *primary = glfwGetPrimaryMonitor();
+      const GLFWvidmode *mode = glfwGetVideoMode(primary);
+      // Save current geometry before entering fullscreen
+      glfwGetWindowPos(window, &settings.window_x, &settings.window_y);
+      glfwGetWindowSize(window, &settings.window_width, &settings.window_height);
+      glfwSetWindowMonitor(window, primary, 0, 0, mode->width, mode->height, mode->refreshRate);
+    }
+    handled = true;
+  }
+
+  // Context shortcuts: only when not in text input (to avoid eating typed characters)
+  if (!handled && !io.WantTextInput) {
+    if (io.KeyCtrl && !io.KeyShift && keyPressed(ImGuiKey_Z)) {
+      UndoStack::instance()->undo();
+    } else if (io.KeyCtrl && io.KeyShift && keyPressed(ImGuiKey_Z)) {
+      UndoStack::instance()->redo();
+    } else if (keyPressed(ImGuiKey_Space)) {
+      if (stream_) stream_->pause(!stream_->isPaused());
+    } else if (keyPressed(ImGuiKey_LeftArrow)) {
+      if (stream_) stream_->seekTo(stream_->currentSec() - 1.0);
+    } else if (keyPressed(ImGuiKey_RightArrow)) {
+      if (stream_) stream_->seekTo(stream_->currentSec() + 1.0);
+    } else if (binary_panel_hovered_ && keyPressed(ImGuiKey_A)) {
+      openSignalEditor(false);
+    } else if ((binary_panel_hovered_ || signals_panel_hovered_) && (keyPressed(ImGuiKey_Enter) || keyPressed(ImGuiKey_KeypadEnter))) {
+      openSignalEditor(true);
+    } else if (binary_panel_hovered_ && (keyPressed(ImGuiKey_C) || keyPressed(ImGuiKey_G) || keyPressed(ImGuiKey_P))) {
+      const auto *target = hoveredSignal();
+      if (!target) target = selectedSignal();
+      if (target && has_selected_id_) showChart(selected_id_, target, true, false);
+    } else if (binary_panel_hovered_ && (keyPressed(ImGuiKey_X) || keyPressed(ImGuiKey_Delete) || keyPressed(ImGuiKey_Backspace))) {
+      const auto *target = hoveredSignal();
+      if (target) {
+        selected_signal_name_ = target->name;
+        removeSelectedSignal();
+      } else {
+        removeSelectedSignal();
+      }
+    } else if (binary_panel_hovered_ && keyPressed(ImGuiKey_E)) {
+      const auto *target = hoveredSignal();
+      if (!target) target = selectedSignal();
+      if (target) {
+        std::string prev_sel = selected_signal_name_;
+        selected_signal_name_ = target->name;
+        updateSignalEndian(!target->is_little_endian);
+        selected_signal_name_ = prev_sel;
+      }
+    } else if (binary_panel_hovered_ && keyPressed(ImGuiKey_S)) {
+      const auto *target = hoveredSignal();
+      if (!target) target = selectedSignal();
+      if (target) {
+        std::string prev_sel = selected_signal_name_;
+        selected_signal_name_ = target->name;
+        updateSignalSigned(!target->is_signed);
+        selected_signal_name_ = prev_sel;
+      }
+    } else if (keyPressed(ImGuiKey_Equal) || keyPressed(ImGuiKey_KeypadAdd)) {
+      if (stream_ && chart_range_) {
+        double center = (chart_range_->first + chart_range_->second) * 0.5;
+        double width = (chart_range_->second - chart_range_->first) * 0.8;
+        updateChartRange(center, width);
+      }
+    } else if (keyPressed(ImGuiKey_Minus) || keyPressed(ImGuiKey_KeypadSubtract)) {
+      if (stream_ && chart_range_) {
+        double center = (chart_range_->first + chart_range_->second) * 0.5;
+        double width = (chart_range_->second - chart_range_->first) * 1.25;
+        updateChartRange(center, width);
+      }
+    } else if (keyPressed(ImGuiKey_Home)) {
+      if (stream_) stream_->seekTo(stream_->minSeconds());
+    } else if (keyPressed(ImGuiKey_End)) {
+      if (stream_) stream_->seekTo(stream_->maxSeconds());
+    }
+  }
 }
 
 // Decode JPEG data from memory into RGBA pixels
@@ -717,8 +670,7 @@ void CabanaImguiApp::draw() {
   ImGui::SetNextWindowViewport(viewport->ID);
 
   // In fullscreen, hide menu bar and status bar (matching Qt behavior)
-  SDL_Window *sdl_window = SDL_GL_GetCurrentWindow();
-  const bool is_fullscreen = sdl_window && (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+  const bool is_fullscreen = glfw_window_ && glfwGetWindowMonitor(glfw_window_) != nullptr;
 
   ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
                                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
@@ -986,7 +938,21 @@ void CabanaImguiApp::draw() {
       }
       ImGui::Separator();
       if (ImGui::MenuItem("Full Screen", "F11", is_fullscreen)) {
-        if (sdl_window) SDL_SetWindowFullscreen(sdl_window, is_fullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+        if (glfw_window_) {
+          if (is_fullscreen) {
+            glfwSetWindowMonitor(glfw_window_, nullptr,
+                                 settings.window_x >= 0 ? settings.window_x : 100,
+                                 settings.window_y >= 0 ? settings.window_y : 100,
+                                 settings.window_width > 0 ? settings.window_width : kWindowWidth,
+                                 settings.window_height > 0 ? settings.window_height : kWindowHeight, 0);
+          } else {
+            GLFWmonitor *primary = glfwGetPrimaryMonitor();
+            const GLFWvidmode *mode = glfwGetVideoMode(primary);
+            glfwGetWindowPos(glfw_window_, &settings.window_x, &settings.window_y);
+            glfwGetWindowSize(glfw_window_, &settings.window_width, &settings.window_height);
+            glfwSetWindowMonitor(glfw_window_, primary, 0, 0, mode->width, mode->height, mode->refreshRate);
+          }
+        }
       }
       ImGui::EndMenu();
     }

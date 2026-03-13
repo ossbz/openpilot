@@ -4,8 +4,6 @@
 #include <string>
 #include <vector>
 
-#include <SDL.h>
-
 #include "imgui.h"
 #include "msgq/visionipc/visionipc_client.h"
 #include "tools/cabana/core/color.h"
@@ -33,10 +31,6 @@ std::string pathBasename(const std::string &path);
 std::string pathDirname(const std::string &path);
 void drawAlertOverlay(ImDrawList *draw, const Timeline::Entry &alert, float x, float y, float w);
 std::string formatPayload(const std::vector<uint8_t> &bytes);
-ImGuiKey mapSdlKey(SDL_Keycode key);
-void updateKeyMods(ImGuiIO &io, SDL_Keymod mods);
-int mapMouseButton(uint8_t button);
-void setClipboardText(void *, const char *text);
 float cabanaUiScale();
 void applyCabanaStyle(float scale);
 void applyCabanaLightStyle(float scale);

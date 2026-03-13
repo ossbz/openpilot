@@ -15,6 +15,7 @@
 #include "tools/cabana/dbc/dbc.h"
 #include "tools/cabana/imgui/stream.h"
 
+struct GLFWwindow;
 struct ImVec2;
 struct ImDrawList;
 
@@ -88,6 +89,7 @@ private:
   };
 
   void draw();
+  void handleKeyboardShortcuts(GLFWwindow *window);
   void drawStatusBar(const ImVec2 &size);
   void drawUnsavedPrompt();
   bool confirmOrPromptUnsaved(std::function<void()> continuation);
@@ -167,6 +169,7 @@ private:
   class Replay *replay() const;
 
   CabanaLaunchConfig config_;
+  GLFWwindow *glfw_window_ = nullptr;
   AbstractStream *stream_ = nullptr;
   std::unique_ptr<VideoStreamState> video_;
   std::vector<MessageListItem> message_items_;

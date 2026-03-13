@@ -7,7 +7,11 @@
 #include <vector>
 
 #define GL_GLEXT_PROTOTYPES
-#include <SDL_opengl.h>
+#ifdef __APPLE__
+#include <OpenGL/gl3.h>
+#else
+#include <GL/gl.h>
+#endif
 
 #include "common/util.h"
 

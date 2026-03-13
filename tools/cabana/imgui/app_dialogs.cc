@@ -661,9 +661,8 @@ bool CabanaImguiApp::loadDbcFile(const std::string &filename, const SourceSet &s
 
 void CabanaImguiApp::loadDbcFromClipboard(const SourceSet &sources) {
   if (sources == SOURCE_ALL) dbc()->closeAll(); else dbc()->close(sources);
-  char *clip = SDL_GetClipboardText();
+  const char *clip = ImGui::GetClipboardText();
   const std::string clip_str = clip ? clip : "";
-  SDL_free(clip);
   std::string error;
   if (dbc()->open(sources, std::string(), clip_str, &error) && dbc()->nonEmptyDBCCount() > 0) {
     setStatusMessage("DBC loaded from clipboard");
@@ -827,7 +826,7 @@ void CabanaImguiApp::saveDbc(bool save_as) {
 
 void CabanaImguiApp::copyDbcToClipboard() {
   if (DBCFile *dbc_file = singleOpenDbcFile()) {
-    SDL_SetClipboardText(dbc_file->generateDBC().c_str());
+    ImGui::SetClipboardText(dbc_file->generateDBC().c_str());
     setStatusMessage("DBC copied to clipboard");
   }
 }

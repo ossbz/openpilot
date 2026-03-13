@@ -8,8 +8,6 @@
 #include <cstring>
 #include <sstream>
 
-#include <SDL.h>
-
 #include "imgui.h"
 #include "implot.h"
 #include "tools/cabana/imgui/commands.h"
