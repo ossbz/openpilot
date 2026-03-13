@@ -405,6 +405,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
   }
 
   // === Tab Bar ===
+  pushQtTabBarStyle();
   if (ImGui::BeginTabBar("chart_tabs", ImGuiTabBarFlags_FittingPolicyResizeDown | ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_Reorderable)) {
     int remove_tab = -1, dup_tab = -1, close_other_tab = -1;
     for (int i = 0; i < static_cast<int>(chart_tabs_.size()); ++i) {
@@ -446,6 +447,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
     }
     ImGui::EndTabBar();
   }
+  popQtTabBarStyle();
   ImGui::Separator();
 
   // Safe to cache reference now — tab mutations above are done
@@ -457,35 +459,33 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
     return;
   }
 
-  // === Compute display range (matching Qt's ChartsWidget::updateState follow-mode) ===
-  double x_min = stream_ ? stream_->minSeconds() : 0.0;
-  double x_max = stream_ ? stream_->maxSeconds() : 1.0;
-  if (chart_range_) {
-    x_min = chart_range_->first;
-    x_max = chart_range_->second;
-  } else if (stream_) {
-    const double range_sec = static_cast<double>(settings.chart_range);
-    const double cur_t = stream_->currentSec();
-    // Qt follow-mode: keep cursor near left edge (~10%), only shift when cursor
-    // moves past 80% of the range or goes before the start (pos < 0)
-    double pos = (cur_t - chart_follow_range_.first) / std::max(1.0, range_sec);
-    if (pos < 0 || pos > 0.8) {
-      chart_follow_range_.first = std::max(stream_->minSeconds(), cur_t - range_sec * 0.1);
-    }
-    x_max = std::min(chart_follow_range_.first + range_sec, stream_->maxSeconds());
-    x_min = std::max(stream_->minSeconds(), x_max - range_sec);
-    x_max = x_min + range_sec;
-    chart_follow_range_ = {x_min, x_max};
-  }
+  double hover_sec_this_frame = -1.0;
+
+  const auto chart_display_range = currentChartDisplayRange();
+  double x_min = chart_display_range.first;
+  double x_max = chart_display_range.second;
+
+  const ImVec2 timeline_pos = ImGui::GetCursorScreenPos();
+  const ImVec2 timeline_size(ImGui::GetContentRegionAvail().x, 14.0f);
+  ImGui::InvisibleButton("chart_timeline", timeline_size);
+  const bool timeline_hovered = ImGui::IsItemHovered();
+  const bool timeline_active = ImGui::IsItemActive();
+  const double timeline_hover_sec = (timeline_hovered || timeline_active)
+                                    ? timelineSecFromMouseX(x_min, x_max, timeline_pos.x, timeline_size.x, ImGui::GetIO().MousePos.x)
+                                    : -1.0;
+  drawTimelineStrip(ImGui::GetWindowDrawList(), timeline_pos, timeline_size, x_min, x_max, stream_->currentSec(),
+                    std::nullopt, timeline_hover_sec >= 0 ? timeline_hover_sec : chart_hover_sec_);
+  if (timeline_hovered) hover_sec_this_frame = timeline_hover_sec;
+  if (timeline_active) stream_->seekTo(timeline_hover_sec);
+  ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
   const int undo_idx = UndoStack::instance()->index();
-  double hover_sec_this_frame = -1.0;
 
   // === Layout ===
   const int chart_count = static_cast<int>(charts.size());
   const int eff_columns = std::min(std::clamp(chart_columns_, 1, 4), chart_count);
   const int rows = (chart_count + eff_columns - 1) / eff_columns;
-  const float gap = ImGui::GetStyle().ItemSpacing.x;
+  const float gap = 4.0f * cabanaUiScale();
   const float cell_w = std::max(200.0f, (ImGui::GetContentRegionAvail().x - gap * (eff_columns - 1)) / eff_columns);
   const float cell_h = std::max(120.0f, static_cast<float>(settings.chart_height));
 
@@ -613,7 +613,8 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
     }
 
     auto &series = cache.series;
-    ImGui::BeginChild(("ChartCell" + std::to_string(chart.id)).c_str(), ImVec2(cell_w, cell_h), ImGuiChildFlags_Borders);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImPlot::GetStyle().Colors[ImPlotCol_FrameBg]);
+    ImGui::BeginChild(("ChartCell" + std::to_string(chart.id)).c_str(), ImVec2(cell_w, cell_h), ImGuiChildFlags_None);
 
     if (series.empty()) {
       ImGui::TextDisabled("No data");
@@ -622,6 +623,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
         ImGui::EndPopup();
       }
       ImGui::EndChild();
+      ImGui::PopStyleColor();
       continue;
     }
 
@@ -982,6 +984,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
       ImGui::EndPopup();
     }
     ImGui::EndChild();
+    ImGui::PopStyleColor();
 
     // Drag-drop: source (matches Qt: default = merge onto target, Shift = reorder)
     if (!(chart_zoom_drag_.active && chart_zoom_drag_.chart_id == chart.id) &&

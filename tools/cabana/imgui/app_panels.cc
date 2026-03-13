@@ -27,6 +27,73 @@ namespace {
 constexpr std::array<float, 11> kPlaybackSpeeds = {0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f, 0.8f, 1.0f, 2.0f, 3.0f, 5.0f};
 }  // namespace
 
+double CabanaImguiApp::timelineSecFromMouseX(double min_sec, double max_sec, float slider_x, float slider_w, float mouse_x) const {
+  if (slider_w <= 0.0f || max_sec <= min_sec) return min_sec;
+  float t = std::clamp((mouse_x - slider_x) / slider_w, 0.0f, 1.0f);
+  return min_sec + (max_sec - min_sec) * t;
+}
+
+void CabanaImguiApp::drawTimelineStrip(ImDrawList *draw, const ImVec2 &slider_pos, const ImVec2 &slider_size,
+                                       double min_sec, double max_sec, double current_sec,
+                                       std::optional<std::pair<double, double>> highlight_range,
+                                       double hover_sec, bool show_missing_segments) const {
+  if (!draw || slider_size.x <= 0.0f || slider_size.y <= 0.0f || max_sec <= min_sec) return;
+
+  const auto secToX = [&](double sec) {
+    double t = (sec - min_sec) / std::max(0.001, max_sec - min_sec);
+    return slider_pos.x + static_cast<float>(t * slider_size.x);
+  };
+
+  draw->AddRectFilled(slider_pos, ImVec2(slider_pos.x + slider_size.x, slider_pos.y + slider_size.y),
+                      packedColor(timeline_colors[(int)TimelineType::None]), 0.0f);
+
+  if (Replay *r = replay()) {
+    if (const auto timeline = r->getTimeline()) {
+      for (const auto &entry : *timeline) {
+        float x0 = secToX(std::clamp(entry.start_time, min_sec, max_sec));
+        float x1 = secToX(std::clamp(entry.end_time, min_sec, max_sec));
+        if (x1 <= slider_pos.x || x0 >= slider_pos.x + slider_size.x || x1 <= x0) continue;
+        draw->AddRectFilled(ImVec2(x0, slider_pos.y), ImVec2(x1, slider_pos.y + slider_size.y),
+                            packedColor(timeline_colors[(int)entry.type]), 0.0f);
+      }
+    }
+
+    if (show_missing_segments) {
+      if (auto event_data = r->getEventData()) {
+        CabanaColor empty_color(40, 40, 42, 180);
+        for (const auto &[n, _] : r->route().segments()) {
+          if (!event_data->isSegmentLoaded(n)) {
+            float x0 = secToX(n * 60.0);
+            float x1 = secToX((n + 1) * 60.0);
+            if (x1 <= slider_pos.x || x0 >= slider_pos.x + slider_size.x || x1 <= x0) continue;
+            draw->AddRectFilled(ImVec2(x0, slider_pos.y), ImVec2(x1, slider_pos.y + slider_size.y), packedColor(empty_color), 0.0f);
+          }
+        }
+      }
+    }
+  }
+
+  if (highlight_range) {
+    const double hi_min = std::clamp(highlight_range->first, min_sec, max_sec);
+    const double hi_max = std::clamp(highlight_range->second, min_sec, max_sec);
+    if (hi_max > hi_min) {
+      const float x0 = secToX(hi_min);
+      const float x1 = secToX(hi_max);
+      draw->AddRectFilled(ImVec2(x0, slider_pos.y), ImVec2(x1, slider_pos.y + slider_size.y), IM_COL32(255, 255, 255, 28), 0.0f);
+      draw->AddLine(ImVec2(x0, slider_pos.y - 1.0f), ImVec2(x0, slider_pos.y + slider_size.y + 1.0f), IM_COL32(225, 225, 225, 190), 1.5f);
+      draw->AddLine(ImVec2(x1, slider_pos.y - 1.0f), ImVec2(x1, slider_pos.y + slider_size.y + 1.0f), IM_COL32(225, 225, 225, 190), 1.5f);
+    }
+  }
+
+  if (hover_sec >= min_sec && hover_sec <= max_sec) {
+    float hover_x = secToX(hover_sec);
+    draw->AddLine(ImVec2(hover_x, slider_pos.y), ImVec2(hover_x, slider_pos.y + slider_size.y), IM_COL32(255, 200, 50, 180), 1.5f);
+  }
+
+  float cursor_x = secToX(std::clamp(current_sec, min_sec, max_sec));
+  draw->AddLine(ImVec2(cursor_x, slider_pos.y - 1.0f), ImVec2(cursor_x, slider_pos.y + slider_size.y + 1.0f), IM_COL32(255, 255, 255, 220), 2.0f);
+}
+
 void CabanaImguiApp::drawMessagesPanel(const ImVec2 &size) {
   ImGui::BeginChild("MessagesPanel", size, ImGuiChildFlags_Borders);
   // Title reflects all active filters (updated after column filter application below)
@@ -464,7 +531,7 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
             // Small hover thumbnail when playing — position tracks hovered time (matching Qt)
             float tw = static_cast<float>(thumb.width);
             float th = static_cast<float>(thumb.height);
-            auto [min_sec, max_sec] = stream_->timeRange().value_or(std::make_pair(stream_->minSeconds(), stream_->maxSeconds()));
+            auto [min_sec, max_sec] = std::make_pair(stream_->minSeconds(), stream_->maxSeconds());
             float pos_frac = (max_sec > min_sec) ? static_cast<float>((hover_sec - min_sec) / (max_sec - min_sec)) : 0.5f;
             float pos_x = image_min.x + pos_frac * image_size.x;
             float tx = std::clamp(pos_x - tw * 0.5f, image_min.x + 4.0f, image_max.x - tw - 4.0f);
@@ -566,45 +633,19 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
     ImGui::TextDisabled("No stream active");
   }
 
-  double min_sec = stream_->minSeconds();
-  double max_sec = stream_->maxSeconds();
-  double current = stream_->currentSec();
-  // When chart time range is active, narrow the scrubber to match (like Qt)
-  const auto time_range = stream_->timeRange();
-  if (time_range) {
-    min_sec = time_range->first;
-    max_sec = time_range->second;
+  const double min_sec = stream_->minSeconds();
+  const double max_sec = stream_->maxSeconds();
+  const double current = stream_->currentSec();
+  std::optional<std::pair<double, double>> chart_window;
+  if (chart_range_ || (show_charts_ && !currentCharts().empty())) {
+    chart_window = currentChartDisplayRange();
   }
   ImGui::TextDisabled("%s / %s", formatTime(current, false).c_str(), formatTime(max_sec, false).c_str());
 
-  if (Replay *r = replay()) {
+  if (replay()) {
     const ImVec2 slider_pos = ImGui::GetCursorScreenPos();
     const ImVec2 slider_size(ImGui::GetContentRegionAvail().x, 16.0f);
-    draw->AddRectFilled(slider_pos, ImVec2(slider_pos.x + slider_size.x, slider_pos.y + slider_size.y), packedColor(timeline_colors[(int)TimelineType::None]), 0.0f);
-    if (const auto timeline = r->getTimeline()) {
-      for (const auto &entry : *timeline) {
-        float x0 = slider_pos.x + static_cast<float>((entry.start_time - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
-        float x1 = slider_pos.x + static_cast<float>((entry.end_time - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
-        draw->AddRectFilled(ImVec2(x0, slider_pos.y), ImVec2(x1, slider_pos.y + slider_size.y), packedColor(timeline_colors[(int)entry.type]), 0.0f);
-      }
-    }
-    if (auto event_data = r->getEventData()) {
-      CabanaColor empty_color(40, 40, 42, 180);
-      for (const auto &[n, _] : r->route().segments()) {
-        if (!event_data->isSegmentLoaded(n)) {
-          float x0 = slider_pos.x + static_cast<float>((n * 60.0 - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
-          float x1 = slider_pos.x + static_cast<float>(((n + 1) * 60.0 - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
-          draw->AddRectFilled(ImVec2(x0, slider_pos.y), ImVec2(x1, slider_pos.y + slider_size.y), packedColor(empty_color), 0.0f);
-        }
-      }
-    }
-    // Chart hover indicator (synced from chart panel)
-    if (chart_hover_sec_ >= 0 && chart_hover_sec_ >= min_sec && chart_hover_sec_ <= max_sec) {
-      float hover_x = slider_pos.x + static_cast<float>((chart_hover_sec_ - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
-      draw->AddLine(ImVec2(hover_x, slider_pos.y), ImVec2(hover_x, slider_pos.y + slider_size.y), IM_COL32(255, 200, 50, 180), 1.5f);
-    }
-    float cursor_x = slider_pos.x + static_cast<float>((current - min_sec) / std::max(0.001, max_sec - min_sec)) * slider_size.x;
-    draw->AddLine(ImVec2(cursor_x, slider_pos.y - 1.0f), ImVec2(cursor_x, slider_pos.y + slider_size.y + 1.0f), IM_COL32(255, 255, 255, 220), 2.0f);
+    drawTimelineStrip(draw, slider_pos, slider_size, min_sec, max_sec, current, chart_window, chart_hover_sec_);
 
     // Parse thumbnails from loaded qlog segments
     parseThumbnails();
@@ -612,12 +653,15 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
     ImGui::InvisibleButton("timeline_bg", slider_size);
     timeline_hover_sec_ = -1.0;
     if (ImGui::IsItemActive() || ImGui::IsItemHovered()) {
-      float t = std::clamp((ImGui::GetIO().MousePos.x - slider_pos.x) / slider_size.x, 0.0f, 1.0f);
-      double hovered_sec = min_sec + (max_sec - min_sec) * t;
+      double hovered_sec = timelineSecFromMouseX(min_sec, max_sec, slider_pos.x, slider_size.x, ImGui::GetIO().MousePos.x);
       if (ImGui::IsItemHovered()) {
         timeline_hover_sec_ = hovered_sec;
       }
       if (ImGui::IsItemActive()) {
+        if (chart_range_ && chart_window && (hovered_sec < chart_window->first || hovered_sec > chart_window->second)) {
+          if (ImGui::IsItemActivated()) pushChartRangeHistory();
+          updateChartRange(hovered_sec, chart_window->second - chart_window->first, false);
+        }
         stream_->seekTo(hovered_sec);
       }
     }

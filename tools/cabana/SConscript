@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 
 import imgui
 import nanosvg
@@ -59,6 +61,21 @@ cabana_base_libs = [common, messaging, cereal, visionipc, replay_lib,
 cabana_backend_lib = cabana_env.Library("cabana_backend_lib", cabana_srcs + cabana_shared_objs, LIBS=cabana_base_libs)
 imgui_core_objs = [cabana_env.Object(target='cabana_' + os.path.splitext(os.path.basename(src))[0], source=src) for src in imgui_sources]
 imgui_core_lib = cabana_env.Library("cabana_imgui_core_lib", imgui_core_objs, LIBS=cabana_base_libs)
+
+# SDL2 is required for the cabana GUI binary but may not be available on CI.
+# Skip building the app binary if SDL2 is not found (matches Qt cabana's guard pattern).
+has_sdl2 = False
+if arch == "Darwin":
+  has_sdl2 = shutil.which('sdl2-config') is not None
+else:
+  try:
+    subprocess.check_call(['pkg-config', '--exists', 'sdl2'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    has_sdl2 = True
+  except (subprocess.CalledProcessError, FileNotFoundError):
+    pass
+
+if not has_sdl2:
+  Return()
 
 cabana_app_env = cabana_env.Clone()
 cabana_app_env['LINKFLAGS'].append('-Wl,-strip-debug')

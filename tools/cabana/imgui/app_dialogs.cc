@@ -854,11 +854,35 @@ void CabanaImguiApp::activateMessage(const MessageId &id) {
   setStatusMessage("Selected " + id.toString());
 }
 
-void CabanaImguiApp::updateChartRange(double center, double width) {
-  if (!stream_) return;
+void CabanaImguiApp::pushChartRangeHistory() {
+  if (!chart_zoom_history_.empty() && chart_zoom_history_.back() == chart_range_) return;
   chart_zoom_history_.push_back(chart_range_);
   chart_zoom_redo_.clear();
   if (chart_zoom_history_.size() > 50) chart_zoom_history_.erase(chart_zoom_history_.begin());
+}
+
+std::pair<double, double> CabanaImguiApp::currentChartDisplayRange() {
+  if (!stream_) return {0.0, 1.0};
+  if (chart_range_) return *chart_range_;
+
+  const double range_sec = std::clamp(static_cast<double>(settings.chart_range), 1.0,
+                                      std::max(1.0, stream_->maxSeconds() - stream_->minSeconds()));
+  const double cur_t = stream_->currentSec();
+  double display_min = chart_follow_range_.first;
+  double pos = (cur_t - display_min) / std::max(1.0, range_sec);
+  if (pos < 0 || pos > 0.8) {
+    display_min = std::max(stream_->minSeconds(), cur_t - range_sec * 0.1);
+  }
+  double display_max = std::min(display_min + range_sec, stream_->maxSeconds());
+  display_min = std::max(stream_->minSeconds(), display_max - range_sec);
+  display_max = display_min + range_sec;
+  chart_follow_range_ = {display_min, display_max};
+  return chart_follow_range_;
+}
+
+void CabanaImguiApp::updateChartRange(double center, double width, bool push_history) {
+  if (!stream_) return;
+  if (push_history) pushChartRangeHistory();
   width = std::clamp(width, 0.05, stream_->maxSeconds() - stream_->minSeconds());
   double min = std::max(stream_->minSeconds(), center - width * 0.5);
   double max = std::min(stream_->maxSeconds(), min + width);

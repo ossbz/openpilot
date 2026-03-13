@@ -16,6 +16,7 @@
 #include "tools/cabana/imgui/stream.h"
 
 struct ImVec2;
+struct ImDrawList;
 
 class CabanaImguiApp {
 public:
@@ -128,8 +129,15 @@ private:
   void ensureChartTabs();
   void ensureSignalState();
   void activateMessage(const MessageId &id);
-  void updateChartRange(double center, double width);
+  void pushChartRangeHistory();
+  void updateChartRange(double center, double width, bool push_history = true);
   void resetChartRange();
+  std::pair<double, double> currentChartDisplayRange();
+  double timelineSecFromMouseX(double min_sec, double max_sec, float slider_x, float slider_w, float mouse_x) const;
+  void drawTimelineStrip(ImDrawList *draw, const ImVec2 &slider_pos, const ImVec2 &slider_size,
+                         double min_sec, double max_sec, double current_sec,
+                         std::optional<std::pair<double, double>> highlight_range = std::nullopt,
+                         double hover_sec = -1.0, bool show_missing_segments = true) const;
   std::string formatTime(double sec, bool include_milliseconds) const;
   const cabana::Msg *selectedDbcMessage() const;
   const MessageListItem *selectedItem() const;
