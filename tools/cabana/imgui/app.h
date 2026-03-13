@@ -263,8 +263,17 @@ private:
     float plot_max_y = 0.0f;
     float start_x = 0.0f;
   };
+  struct TimelineZoomDragState {
+    bool active = false;
+    float start_x = 0.0f;
+    float min_x = 0.0f;
+    float max_x = 0.0f;
+    double range_min = 0.0;
+    double range_max = 0.0;
+  };
   PanelRect panel_messages_, panel_binary_, panel_signals_, panel_video_, panel_charts_;
   ChartZoomDragState chart_zoom_drag_;
+  TimelineZoomDragState chart_timeline_zoom_drag_;
   bool chart_scrub_was_playing_ = false;
   double chart_hover_sec_ = -1.0;
   double timeline_hover_sec_ = -1.0;  // Timeline scrub hover for full-size thumbnail

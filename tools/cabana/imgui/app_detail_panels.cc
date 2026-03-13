@@ -461,22 +461,64 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
 
   double hover_sec_this_frame = -1.0;
 
-  const auto chart_display_range = currentChartDisplayRange();
-  double x_min = chart_display_range.first;
-  double x_max = chart_display_range.second;
+  const auto live_chart_display_range = currentChartDisplayRange();
+  double x_min = chart_timeline_zoom_drag_.active ? chart_timeline_zoom_drag_.range_min : live_chart_display_range.first;
+  double x_max = chart_timeline_zoom_drag_.active ? chart_timeline_zoom_drag_.range_max : live_chart_display_range.second;
 
   const ImVec2 timeline_pos = ImGui::GetCursorScreenPos();
   const ImVec2 timeline_size(ImGui::GetContentRegionAvail().x, 14.0f);
   ImGui::InvisibleButton("chart_timeline", timeline_size);
   const bool timeline_hovered = ImGui::IsItemHovered();
-  const bool timeline_active = ImGui::IsItemActive();
-  const double timeline_hover_sec = (timeline_hovered || timeline_active)
-                                    ? timelineSecFromMouseX(x_min, x_max, timeline_pos.x, timeline_size.x, ImGui::GetIO().MousePos.x)
-                                    : -1.0;
+  if (timeline_hovered && ImGui::IsMouseClicked(kChartZoomButton)) {
+    chart_timeline_zoom_drag_.active = true;
+    chart_timeline_zoom_drag_.start_x = std::clamp(ImGui::GetIO().MousePos.x, timeline_pos.x, timeline_pos.x + timeline_size.x);
+    chart_timeline_zoom_drag_.min_x = timeline_pos.x;
+    chart_timeline_zoom_drag_.max_x = timeline_pos.x + timeline_size.x;
+    chart_timeline_zoom_drag_.range_min = live_chart_display_range.first;
+    chart_timeline_zoom_drag_.range_max = live_chart_display_range.second;
+    x_min = chart_timeline_zoom_drag_.range_min;
+    x_max = chart_timeline_zoom_drag_.range_max;
+  }
+  const bool timeline_drag_active = chart_timeline_zoom_drag_.active;
+  const double timeline_hover_sec = (timeline_hovered || timeline_drag_active)
+                                     ? timelineSecFromMouseX(x_min, x_max, timeline_pos.x, timeline_size.x, ImGui::GetIO().MousePos.x)
+                                     : -1.0;
   drawTimelineStrip(ImGui::GetWindowDrawList(), timeline_pos, timeline_size, x_min, x_max, stream_->currentSec(),
                     std::nullopt, timeline_hover_sec >= 0 ? timeline_hover_sec : chart_hover_sec_);
-  if (timeline_hovered) hover_sec_this_frame = timeline_hover_sec;
-  if (timeline_active) stream_->seekTo(timeline_hover_sec);
+  if (timeline_drag_active) {
+    const float cur_x = std::clamp(ImGui::GetIO().MousePos.x, chart_timeline_zoom_drag_.min_x, chart_timeline_zoom_drag_.max_x);
+    const float drag_width_px = std::abs(cur_x - chart_timeline_zoom_drag_.start_x);
+    if (ImGui::IsMouseDown(kChartZoomButton) && drag_width_px > kMinChartZoomDragPx) {
+      const float sel_min_x = std::min(chart_timeline_zoom_drag_.start_x, cur_x);
+      const float sel_max_x = std::max(chart_timeline_zoom_drag_.start_x, cur_x);
+      ImDrawList *overlay = ImGui::GetWindowDrawList();
+      overlay->AddRectFilled(ImVec2(sel_min_x, timeline_pos.y), ImVec2(sel_max_x, timeline_pos.y + timeline_size.y), IM_COL32(180, 205, 230, 40));
+      overlay->AddRect(ImVec2(sel_min_x, timeline_pos.y), ImVec2(sel_max_x, timeline_pos.y + timeline_size.y), IM_COL32(180, 205, 230, 180), 0.0f, 0, 1.0f);
+    }
+    if (ImGui::IsMouseReleased(kChartZoomButton)) {
+      if (drag_width_px > kMinChartZoomDragPx) {
+        const float sel_min_x = std::min(chart_timeline_zoom_drag_.start_x, cur_x);
+        const float sel_max_x = std::max(chart_timeline_zoom_drag_.start_x, cur_x);
+        const double zoom_min = timelineSecFromMouseX(chart_timeline_zoom_drag_.range_min, chart_timeline_zoom_drag_.range_max,
+                                                      chart_timeline_zoom_drag_.min_x,
+                                                      chart_timeline_zoom_drag_.max_x - chart_timeline_zoom_drag_.min_x,
+                                                      sel_min_x);
+        const double zoom_max = timelineSecFromMouseX(chart_timeline_zoom_drag_.range_min, chart_timeline_zoom_drag_.range_max,
+                                                      chart_timeline_zoom_drag_.min_x,
+                                                      chart_timeline_zoom_drag_.max_x - chart_timeline_zoom_drag_.min_x,
+                                                      sel_max_x);
+        if ((zoom_max - zoom_min) > kMinChartZoomSeconds) {
+          updateChartRange((zoom_min + zoom_max) * 0.5, zoom_max - zoom_min);
+        }
+      } else if (timeline_hover_sec >= 0) {
+        stream_->seekTo(timeline_hover_sec);
+      }
+      chart_timeline_zoom_drag_ = {};
+      x_min = currentChartDisplayRange().first;
+      x_max = currentChartDisplayRange().second;
+    }
+  }
+  if (timeline_hovered || timeline_drag_active) hover_sec_this_frame = timeline_hover_sec;
   ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
   const int undo_idx = UndoStack::instance()->index();
@@ -730,7 +772,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
     const char *y_unit = y_unit_str.empty() ? nullptr : y_unit_str.c_str();
 
     // --- ImPlot ---
-      ImPlotFlags plot_flags = ImPlotFlags_NoMenus | ImPlotFlags_NoBoxSelect;
+      ImPlotFlags plot_flags = ImPlotFlags_NoMenus | ImPlotFlags_NoBoxSelect | ImPlotFlags_NoMouseText;
       if (series.size() <= 1) plot_flags |= ImPlotFlags_NoLegend;
       if (ImPlot::BeginPlot(("##chart_" + std::to_string(chart.id)).c_str(), ImVec2(-1, -1), plot_flags)) {
       ImPlotAxisFlags x_flags = rows > 1 && ci < chart_count - eff_columns ? ImPlotAxisFlags_NoTickLabels : ImPlotAxisFlags_None;
@@ -794,9 +836,11 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
         stream_->seekTo(std::clamp(cur, stream_->minSeconds(), stream_->maxSeconds()));
       }
 
-      // Cross-chart synchronized hover: use this frame's hover or previous frame's synced value
+      // Cross-chart synchronized hover: use live hover first, then this frame's synced hover,
+      // then the previous frame's shared hover state.
       const bool this_hovered = ImPlot::IsPlotHovered();
-      const double hover_sec = this_hovered ? ImPlot::GetPlotMousePos().x : chart_hover_sec_;
+      const double hover_sec = this_hovered ? ImPlot::GetPlotMousePos().x
+                                            : (hover_sec_this_frame >= 0 ? hover_sec_this_frame : chart_hover_sec_);
       const bool show_track = hover_sec >= 0;
       if (this_hovered) hover_sec_this_frame = ImPlot::GetPlotMousePos().x;
 
@@ -859,11 +903,12 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
           ImVec2 pos = ImPlot::PlotToPixels(ps.xs[idx], ps.ys[idx]);
           draw->AddCircleFilled(pos, 5.5f, packedColor(ps.color));
           draw->AddCircle(pos, 5.5f, IM_COL32(255, 255, 255, 200), 0, 1.5f);
-          if (this_hovered) {
+          if (show_track) {
             const auto *m = dbc()->msg(ps.ref.msg_id);
             const auto *s = m ? m->sig(ps.ref.signal_name) : nullptr;
             std::string val = s ? s->formatValue(ps.ys[idx], false) : std::to_string(ps.ys[idx]);
-            ImPlot::Annotation(ps.xs[idx], ps.ys[idx], imColor(ps.color), ImVec2(10, -10), true, "%s", val.c_str());
+            std::string annotation = val + "  " + formatTime(ps.xs[idx], false);
+            ImPlot::Annotation(ps.xs[idx], ps.ys[idx], imColor(ps.color), ImVec2(10, -10), true, "%s", annotation.c_str());
           }
         }
       }
@@ -911,41 +956,6 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
             if (chart_range_) stream_->setTimeRange(chart_range_);
             else stream_->setTimeRange(std::nullopt);
           }
-        }
-        // Tooltip (skip hidden series, compute visible min/max dynamically)
-        if (!ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-          ImGui::BeginTooltip();
-          const double tip = std::clamp(hover_sec, stream_->minSeconds(), stream_->maxSeconds());
-          ImGui::TextUnformatted(formatTime(tip, false).c_str());
-          for (int si = 0; si < static_cast<int>(series.size()); ++si) {
-            const auto &ps = series[si];
-            bool hidden = si < static_cast<int>(chart.hidden.size()) && chart.hidden[si];
-            if (hidden || ps.xs.empty()) continue;
-            auto it2 = std::upper_bound(ps.xs.begin(), ps.xs.end(), tip);
-            int idx2 = (it2 == ps.xs.begin()) ? 0 : static_cast<int>(it2 - ps.xs.begin()) - 1;
-            const auto *m = dbc()->msg(ps.ref.msg_id);
-            const auto *s = m ? m->sig(ps.ref.signal_name) : nullptr;
-            std::string val = s ? s->formatValue(ps.ys[idx2], false) : std::to_string(ps.ys[idx2]);
-            // Compute visible y-range for this series using the current x window
-            double vis_min = DBL_MAX, vis_max = -DBL_MAX;
-            auto lo = std::lower_bound(ps.xs.begin(), ps.xs.end(), x_min);
-            auto hi = std::upper_bound(ps.xs.begin(), ps.xs.end(), x_max);
-            for (auto it3 = lo; it3 != hi; ++it3) {
-              int k = static_cast<int>(it3 - ps.xs.begin());
-              vis_min = std::min(vis_min, ps.ys[k]);
-              vis_max = std::max(vis_max, ps.ys[k]);
-            }
-            if (vis_min <= vis_max) {
-              ImGui::TextColored(imColor(ps.color), "%s: %s  [%.4g .. %.4g]%s",
-                ps.ref.signal_name.c_str(), val.c_str(), vis_min, vis_max,
-                ps.unit.empty() ? "" : (" " + ps.unit).c_str());
-            } else {
-              ImGui::TextColored(imColor(ps.color), "%s: %s%s",
-                ps.ref.signal_name.c_str(), val.c_str(),
-                ps.unit.empty() ? "" : (" " + ps.unit).c_str());
-            }
-          }
-          ImGui::EndTooltip();
         }
       }
       ImPlot::EndPlot();
