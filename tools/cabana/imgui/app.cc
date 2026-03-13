@@ -1,6 +1,7 @@
 #include "tools/cabana/imgui/app.h"
 #include "tools/cabana/imgui/app_util.h"
 #include "tools/cabana/imgui/app_video_state.h"
+#include "tools/cabana/imgui/icons.h"
 
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -351,6 +352,7 @@ int CabanaImguiApp::run() {
 
   loadCabanaFonts();
   applyCabanaTheme(settings.theme, cabanaUiScale());
+  initBootstrapIcons((getExeDir() + "/../../third_party/bootstrap/bootstrap-icons.svg").c_str());
 
   if (!ImGui_ImplOpenGL3_Init("#version 330")) {
     ImPlot::DestroyContext();
@@ -593,6 +595,7 @@ int CabanaImguiApp::run() {
     }
   }
   // Destroy GL resources before tearing down the GL context
+  destroyBootstrapIcons();
   clearThumbnails();
   video_.reset();
   ImGui_ImplOpenGL3_Shutdown();
@@ -725,8 +728,9 @@ void CabanaImguiApp::draw() {
 
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   ImGui::Begin("CabanaRoot", nullptr, window_flags);
-  ImGui::PopStyleVar(2);
+  ImGui::PopStyleVar(3);
 
   if (ImGui::BeginMenuBar()) {
     if (ImGui::BeginMenu("File")) {
@@ -1052,7 +1056,7 @@ void CabanaImguiApp::draw() {
   const float right_bottom_h = std::max(100.0f, content_h - right_top_h - split_t);
 
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
   if (show_messages_) {
     { auto p = ImGui::GetCursorScreenPos(); panel_messages_ = {p.x, p.y, left_w, content_h}; }

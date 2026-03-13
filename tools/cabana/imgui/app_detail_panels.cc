@@ -1,6 +1,7 @@
 #include "tools/cabana/imgui/app.h"
 #include "tools/cabana/imgui/app_util.h"
 #include "tools/cabana/imgui/app_video_state.h"
+#include "tools/cabana/imgui/icons.h"
 
 #include <algorithm>
 #include <cmath>
@@ -310,7 +311,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(chart_zoom_history_.empty());
-  if (ImGui::SmallButton("Undo Zoom")) {
+  if (smallIconButton("##undo_zoom", BootstrapIcon::ArrowCounterclockwise, "Undo Zoom")) {
     if (!chart_zoom_history_.empty()) {
       chart_zoom_redo_.push_back(chart_range_);
       chart_range_ = chart_zoom_history_.back();
@@ -322,7 +323,7 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
   ImGui::EndDisabled();
   ImGui::SameLine();
   ImGui::BeginDisabled(chart_zoom_redo_.empty());
-  if (ImGui::SmallButton("Redo Zoom")) {
+  if (smallIconButton("##redo_zoom", BootstrapIcon::ArrowClockwise, "Redo Zoom")) {
     if (!chart_zoom_redo_.empty()) {
       chart_zoom_history_.push_back(chart_range_);
       chart_range_ = chart_zoom_redo_.back();
@@ -333,18 +334,18 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
   }
   ImGui::EndDisabled();
   ImGui::SameLine();
-  if (ImGui::SmallButton("Reset Zoom")) {
+  if (smallIconButton("##reset_zoom", BootstrapIcon::ZoomOut, "Reset Zoom")) {
     chart_zoom_history_.clear();
     chart_zoom_redo_.clear();
     resetChartRange();
   }
   // Wrap to next line if toolbar is getting too wide
-  if (ImGui::GetCursorPosX() + 300 > ImGui::GetContentRegionMax().x) {
+  if (ImGui::GetCursorPosX() + 200 > ImGui::GetContentRegionMax().x) {
     // Don't SameLine — start a new row
   } else {
     ImGui::SameLine();
   }
-  if (ImGui::SmallButton("New Chart")) {
+  if (smallIconButton("##new_chart", BootstrapIcon::Plus, "New Chart")) {
     // Open signal selector to create a new chart
     signal_selector_chart_id_ = -1;  // -1 means "create new chart"
     signal_selector_selected_.clear();
@@ -356,15 +357,15 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(selectedSignal() == nullptr || !has_selected_id_);
-  if (ImGui::SmallButton("Add Signal")) showChart(selected_id_, selectedSignal(), true, false);
+  if (smallIconButton("##add_signal", BootstrapIcon::GraphUp, "Add Signal")) showChart(selected_id_, selectedSignal(), true, false);
   ImGui::EndDisabled();
   ImGui::SameLine();
-  if (ImGui::SmallButton(charts_floating_ ? "Dock" : "Pop Out")) {
+  if (smallIconButton("##dock_toggle", charts_floating_ ? BootstrapIcon::DashSquare : BootstrapIcon::WindowStack, charts_floating_ ? "Dock" : "Pop Out")) {
     charts_floating_ = !charts_floating_;
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(currentCharts().empty());
-  if (ImGui::SmallButton("Remove All")) removeAllCharts();
+  if (smallIconButton("##remove_all", BootstrapIcon::XLg, "Remove All")) removeAllCharts();
   ImGui::EndDisabled();
   ImGui::SameLine();
   if (chart_range_) {
@@ -638,10 +639,10 @@ void CabanaImguiApp::drawChartPanel(const ImVec2 &size) {
       }
     }
     // Per-chart action buttons (matching Qt's per-chart header controls)
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - 80.0f);
-    if (ImGui::SmallButton(("Manage##" + std::to_string(chart.id)).c_str())) manage_chart_idx = ci;
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - 55.0f);
+    if (smallIconButton(("##manage_" + std::to_string(chart.id)).c_str(), BootstrapIcon::Gear, "Manage Signals")) manage_chart_idx = ci;
     ImGui::SameLine();
-    if (ImGui::SmallButton(("X##chart_close_" + std::to_string(chart.id)).c_str())) remove_chart_idx = ci;
+    if (smallIconButton(("##close_" + std::to_string(chart.id)).c_str(), BootstrapIcon::X)) remove_chart_idx = ci;
     ImGui::EndGroup();
 
     // Chart context menu triggered from title/legend area (entire group)
@@ -1165,9 +1166,9 @@ void CabanaImguiApp::drawBinaryPanel(const ImVec2 &size) {
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(!can_edit_signals);
-  if (ImGui::SmallButton("Edit Msg")) openMessageEditor();
+  if (smallIconButton("##edit_msg", BootstrapIcon::Pencil, "Edit Message")) openMessageEditor();
   ImGui::SameLine();
-  if (ImGui::SmallButton("Rm Msg")) {
+  if (smallIconButton("##rm_msg", BootstrapIcon::XLg, "Remove Message")) {
     UndoStack::push(new RemoveMsgCommand(selected->id));
     selected_signal_name_.clear();
     hovered_signal_name_.clear();
@@ -1175,13 +1176,13 @@ void CabanaImguiApp::drawBinaryPanel(const ImVec2 &size) {
   ImGui::EndDisabled();
   ImGui::SameLine();
   ImGui::BeginDisabled(!can_edit_signals);
-  if (ImGui::SmallButton("+Sig")) openSignalEditor(false);
+  if (smallIconButton("##add_sig", BootstrapIcon::Plus, "Add Signal")) openSignalEditor(false);
   ImGui::EndDisabled();
   if (const cabana::Signal *sig = selectedSignal()) {
     ImGui::SameLine();
     ImGui::TextColored(imColor(sig->color), "%s", sig->name.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton(has_selected_id_ && findChart(selected_id_, sig) ? "Unplot" : "Plot")) {
+    if (smallIconButton("##plot_sig", BootstrapIcon::GraphUp, has_selected_id_ && findChart(selected_id_, sig) ? "Unplot" : "Plot")) {
       toggleSelectedSignalPlot(false);
     }
     ImGui::SameLine();
@@ -1190,7 +1191,7 @@ void CabanaImguiApp::drawBinaryPanel(const ImVec2 &size) {
     if (ImGui::SmallButton(sig->is_signed ? "S" : "U")) updateSignalSigned(!sig->is_signed);
     ImGui::SameLine();
     ImGui::BeginDisabled(!can_edit_signals);
-    if (ImGui::SmallButton("Edit")) openSignalEditor(true);
+    if (smallIconButton("##edit_sig", BootstrapIcon::Pencil)) openSignalEditor(true);
     ImGui::EndDisabled();
   }
   // Warnings matching Qt DetailWidget::refresh()

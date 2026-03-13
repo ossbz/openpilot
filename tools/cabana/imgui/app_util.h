@@ -53,26 +53,3 @@ void nv12ToRgba(const uint8_t *y_plane, const uint8_t *uv_plane, int width, int 
 void writePersistentState(const CabanaPersistentState &state);
 CabanaPersistentState readPersistentState();
 
-// Icon drawing (matching bootstrap icons from Qt cabana)
-typedef void (*IconDrawFn)(ImDrawList *, ImVec2, ImVec2, ImU32);
-bool iconButton(const char *str_id, IconDrawFn draw_fn);
-bool smallIconButton(const char *str_id, IconDrawFn draw_fn);
-void drawPlayIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawPauseIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawRewindIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawFastForwardIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawSkipEndIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawRepeatIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawCloseIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawPencilIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawPlusIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawMinusIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawGearIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawGraphUpIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawUndoIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawRedoIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawZoomOutIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawDockIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawUndockIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawInfoCircleIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);
-void drawTrashIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col);

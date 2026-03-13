@@ -1,6 +1,7 @@
 #include "tools/cabana/imgui/app.h"
 #include "tools/cabana/imgui/app_util.h"
 #include "tools/cabana/imgui/app_video_state.h"
+#include "tools/cabana/imgui/icons.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,53 +25,6 @@
 
 namespace {
 constexpr std::array<float, 11> kPlaybackSpeeds = {0.01f, 0.02f, 0.05f, 0.1f, 0.2f, 0.5f, 0.8f, 1.0f, 2.0f, 3.0f, 5.0f};
-
-// Icon button: square button with a custom-drawn icon (matching bootstrap icons from Qt cabana)
-typedef void (*IconDrawFn)(ImDrawList *, ImVec2, ImVec2, ImU32);
-
-static bool iconButton(const char *str_id, IconDrawFn draw_fn) {
-  float h = ImGui::GetFrameHeight();
-  bool pressed = ImGui::Button(str_id, ImVec2(h, h));
-  ImDrawList *dl = ImGui::GetWindowDrawList();
-  ImVec2 mn = ImGui::GetItemRectMin();
-  ImVec2 mx = ImGui::GetItemRectMax();
-  draw_fn(dl, mn, mx, ImGui::GetColorU32(ImGuiCol_Text));
-  return pressed;
-}
-
-static void drawPlayIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
-  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
-  float r = (mx.y - mn.y) * 0.28f;
-  dl->AddTriangleFilled(ImVec2(cx - r * 0.6f, cy - r), ImVec2(cx - r * 0.6f, cy + r), ImVec2(cx + r * 0.8f, cy), col);
-}
-
-static void drawPauseIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
-  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
-  float h = (mx.y - mn.y) * 0.28f;
-  float bw = (mx.x - mn.x) * 0.09f;
-  float gap = (mx.x - mn.x) * 0.08f;
-  dl->AddRectFilled(ImVec2(cx - gap - bw, cy - h), ImVec2(cx - gap, cy + h), col);
-  dl->AddRectFilled(ImVec2(cx + gap, cy - h), ImVec2(cx + gap + bw, cy + h), col);
-}
-
-static void drawRewindIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
-  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
-  float h = (mx.y - mn.y) * 0.26f;
-  float w = (mx.x - mn.x) * 0.22f;
-  float off = w * 0.05f;
-  dl->AddTriangleFilled(ImVec2(cx + off, cy - h), ImVec2(cx + off, cy + h), ImVec2(cx - w + off, cy), col);
-  dl->AddTriangleFilled(ImVec2(cx + w + off, cy - h), ImVec2(cx + w + off, cy + h), ImVec2(cx + off, cy), col);
-}
-
-static void drawFastForwardIcon(ImDrawList *dl, ImVec2 mn, ImVec2 mx, ImU32 col) {
-  float cx = (mn.x + mx.x) * 0.5f, cy = (mn.y + mx.y) * 0.5f;
-  float h = (mx.y - mn.y) * 0.26f;
-  float w = (mx.x - mn.x) * 0.22f;
-  float off = w * 0.05f;
-  dl->AddTriangleFilled(ImVec2(cx - w - off, cy - h), ImVec2(cx - w - off, cy + h), ImVec2(cx - off, cy), col);
-  dl->AddTriangleFilled(ImVec2(cx - off, cy - h), ImVec2(cx - off, cy + h), ImVec2(cx + w - off, cy), col);
-}
-
 }  // namespace
 
 void CabanaImguiApp::drawMessagesPanel(const ImVec2 &size) {
@@ -549,28 +503,28 @@ void CabanaImguiApp::drawVideoPanel(const ImVec2 &size) {
   ImGui::Spacing();
   if (!is_dummy) {
     const bool paused_ctrl = stream_ && stream_->isPaused();
-    if (iconButton(paused_ctrl ? "##play" : "##pause", paused_ctrl ? drawPlayIcon : drawPauseIcon)) {
+    if (iconButton(paused_ctrl ? "##play" : "##pause", paused_ctrl ? BootstrapIcon::Play : BootstrapIcon::Pause)) {
       stream_->pause(!paused_ctrl);
     }
     ImGui::SameLine();
-    if (iconButton("##rewind", drawRewindIcon)) stream_->seekTo(stream_->currentSec() - 1.0);
+    if (iconButton("##rewind", BootstrapIcon::Rewind)) stream_->seekTo(stream_->currentSec() - 1.0);
     ImGui::SameLine();
-    if (iconButton("##ffwd", drawFastForwardIcon)) stream_->seekTo(stream_->currentSec() + 1.0);
+    if (iconButton("##ffwd", BootstrapIcon::FastForward)) stream_->seekTo(stream_->currentSec() + 1.0);
     if (stream_ && !stream_->liveStreaming()) {
       ImGui::SameLine();
-      if (ImGui::Button("Route Info")) show_route_info_ = true;
+      if (iconButton("##route_info", BootstrapIcon::InfoCircle, "Route Info")) show_route_info_ = true;
     }
 
     if (Replay *r = replay()) {
       ImGui::SameLine();
-      if (ImGui::Button(r->loop() ? "Looping" : "Loop")) r->setLoop(!r->loop());
+      if (iconButton("##loop", BootstrapIcon::Repeat, r->loop() ? "Loop: On" : "Loop: Off")) r->setLoop(!r->loop());
     }
 
     if (stream_->liveStreaming()) {
       ImGui::SameLine();
       bool has_time_range = stream_->timeRange().has_value();
       ImGui::BeginDisabled(has_time_range);
-      if (ImGui::Button("Live")) {
+      if (iconButton("##live", BootstrapIcon::SkipEndFill)) {
         stream_->setSpeed(1.0f);
         stream_->pause(false);
         stream_->seekTo(stream_->maxSeconds() + 1);
@@ -923,13 +877,12 @@ void CabanaImguiApp::drawSignalsPanel(const ImVec2 &size) {
         // Plot toggle and remove button at right edge
         float right_x = ImGui::GetWindowContentRegionMax().x;
         ImGui::SameLine(right_x - 52.0f);
-        if (ImGui::SmallButton(plotted ? "P*" : "P")) {
+        if (smallIconButton(("##plot_" + sig->name).c_str(), BootstrapIcon::GraphUp, plotted ? "Hide Plot (Shift+click to merge)" : "Show Plot (Shift+click to merge)")) {
           if (has_selected_id_) showChart(selected_id_, sig, !plotted, ImGui::GetIO().KeyShift);
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(plotted ? "Hide Plot (Shift+click to merge)" : "Show Plot (Shift+click to merge)");
         ImGui::SameLine(right_x - 22.0f);
         ImGui::BeginDisabled(!can_edit_signals);
-        if (ImGui::SmallButton("X")) {
+        if (smallIconButton(("##rm_" + sig->name).c_str(), BootstrapIcon::X)) {
           selected_signal_name_ = sig->name;
           removeSelectedSignal();
         }

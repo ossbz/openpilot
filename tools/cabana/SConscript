@@ -80,5 +80,6 @@ cabana_app_util = cabana_app_env.Object('cabana_app_util', 'imgui/app_util.cc')
 cabana_app_panels = cabana_app_env.Object('cabana_app_panels', 'imgui/app_panels.cc')
 cabana_app_detail_panels = cabana_app_env.Object('cabana_app_detail_panels', 'imgui/app_detail_panels.cc')
 cabana_app_dialogs = cabana_app_env.Object('cabana_app_dialogs', 'imgui/app_dialogs.cc')
-cabana_app_env.Program('cabana', [cabana_main, cabana_app, cabana_app_util, cabana_app_panels, cabana_app_detail_panels, cabana_app_dialogs, cabana_backend_lib, imgui_core_lib],
+cabana_icons = cabana_app_env.Object('cabana_icons', 'imgui/icons.cc')
+cabana_app_env.Program('cabana', [cabana_main, cabana_app, cabana_app_util, cabana_app_panels, cabana_app_detail_panels, cabana_app_dialogs, cabana_icons, cabana_backend_lib, imgui_core_lib],
                        LIBS=cabana_libs, FRAMEWORKS=cabana_frameworks)
