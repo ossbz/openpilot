@@ -40,10 +40,8 @@
 #include "tools/cabana/imgui/dbcmanager.h"
 #include "tools/cabana/imgui/settings.h"
 #include "tools/cabana/imgui/devicestream.h"
-#ifdef HAS_LIBUSB
 #include "tools/cabana/panda.h"
 #include "tools/cabana/imgui/pandastream.h"
-#endif
 #ifndef __APPLE__
 #include "tools/cabana/imgui/socketcanstream.h"
 #endif
@@ -158,9 +156,7 @@ void CabanaImguiApp::openStreamDialog() {
   ss_road_cam_ = true;
   ss_driver_cam_ = false;
   ss_wide_cam_ = false;
-#ifdef HAS_LIBUSB
   ss_panda_serials_ = Panda::list();
-#endif
   ss_panda_serial_idx_ = 0;
   ss_panda_needs_probe_ = true;
   ss_bus_config_ = {};
@@ -2035,7 +2031,6 @@ void CabanaImguiApp::draw() {
         ImGui::Checkbox("Wide road camera", &ss_wide_cam_);
         ImGui::EndTabItem();
       }
-#ifdef HAS_LIBUSB
       if (ImGui::BeginTabItem("Panda")) {
         ss_tab_ = 1;
         // Guard: block new Panda connection if one is already active (matching Qt behavior)
@@ -2105,7 +2100,6 @@ void CabanaImguiApp::draw() {
         if (panda_already_connected) ImGui::EndDisabled();
         ImGui::EndTabItem();
       }
-#endif
 #ifndef __APPLE__
       if (ImGui::BeginTabItem("SocketCAN")) {
         ss_tab_ = 2;
@@ -2170,9 +2164,7 @@ void CabanaImguiApp::draw() {
 
     // Open / Cancel buttons
     bool can_open = true;
-#ifdef HAS_LIBUSB
     if (ss_tab_ == 1 && (ss_panda_serials_.empty() || (stream_ && dynamic_cast<PandaStream *>(stream_)))) can_open = false;
-#endif
     if (ss_tab_ == 2 && ss_can_devices_.empty()) can_open = false;
 
     if (!can_open) ImGui::BeginDisabled();
@@ -2228,9 +2220,7 @@ void CabanaImguiApp::draw() {
               }
             }
           }
-        }
-#ifdef HAS_LIBUSB
-        else if (ss_tab_ == 1) {
+        } else if (ss_tab_ == 1) {
           // Panda
           PandaStreamConfig config;
           config.serial = ss_panda_serials_[ss_panda_serial_idx_];
@@ -2243,9 +2233,7 @@ void CabanaImguiApp::draw() {
             config.bus_config[i].data_speed_kbps = data_speed_values[ss_bus_config_[i].data_speed_idx];
           }
           new_stream = new PandaStream(config);
-        }
-#endif
-        else if (ss_tab_ == 2) {
+        } else if (ss_tab_ == 2) {
           // SocketCAN
 #ifndef __APPLE__
           SocketCanStreamConfig config;

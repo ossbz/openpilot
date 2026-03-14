@@ -1,5 +1,4 @@
 import os
-import subprocess
 
 import imgui
 import nanosvg
@@ -10,17 +9,11 @@ Import('env', 'arch', 'common', 'messaging', 'visionipc', 'cereal')
 SConscript(['#tools/replay/SConscript'])
 Import('replay_lib')
 
-# Check for libusb availability
-has_libusb = subprocess.call(['pkg-config', '--exists', 'libusb-1.0'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
-
 # ---- Cabana build ----
 cabana_env = env.Clone()
 cabana_env['CPPPATH'] += [imgui.INCLUDE_DIR, imgui.SRC_DIR, nanosvg.INCLUDE_DIR]
 opendbc_path = '-DOPENDBC_FILE_PATH=\'"%s"\'' % (cabana_env.Dir("../../opendbc/dbc").abspath)
-cabana_env['CXXFLAGS'] += [opendbc_path, '-DImDrawIdx=unsigned']
-if has_libusb:
-  cabana_env['CXXFLAGS'] += ['-DHAS_LIBUSB']
-  cabana_env.ParseConfig('pkg-config --cflags libusb-1.0')
+cabana_env['CXXFLAGS'] += [opendbc_path, '-DImDrawIdx=unsigned', '-DGLFW_INCLUDE_NONE']
 
 # Desktop GL 3.3 core — use imgui's built-in GL loader (imgui_impl_opengl3_loader.h)
 # instead of system GL/GLES headers, so cabana builds on headless CI too.
@@ -39,12 +32,11 @@ cabana_srcs = [
   'imgui/settings.cc', 'imgui/commands.cc',
   'imgui/stream.cc', 'imgui/livestream.cc',
   'imgui/replaystream.cc', 'imgui/devicestream.cc',
+  'imgui/pandastream.cc',
   'imgui/dbcmanager.cc', 'imgui/dbcfile.cc',
   'imgui/util.cc', 'imgui/export.cc',
   'imgui/bootstrap.cc',
 ]
-if has_libusb:
-  cabana_srcs += ['imgui/pandastream.cc']
 if arch != "Darwin":
   cabana_srcs += ['imgui/socketcanstream.cc']
 
@@ -55,18 +47,15 @@ cabana_shared_srcs = {
   'cabana_persistent_state': 'core/persistent_state.cc',
   'cabana_workspace_state': 'core/workspace_state.cc',
   'cabana_launch_config': 'core/launch_config.cc',
+  'cabana_panda': 'panda.cc',
 }
-if has_libusb:
-  cabana_shared_srcs['cabana_panda'] = 'panda.cc'
 cabana_shared_objs = [cabana_env.Object(target=name, source=src) for name, src in cabana_shared_srcs.items()]
 
 cabana_base_libs = [common, messaging, cereal, visionipc, replay_lib,
                     'avformat', 'avcodec', 'swresample', 'avutil',
-                    'x264', 'z', 'bz2', 'zstd', 'yuv',
+                    'x264', 'z', 'bz2', 'zstd', 'yuv', 'usb-1.0',
                     'capnp', 'kj',
                     'm', 'ssl', 'crypto', 'pthread']
-if has_libusb:
-  cabana_base_libs += ['usb-1.0']
 
 cabana_backend_lib = cabana_env.Library("cabana_backend_lib", cabana_srcs + cabana_shared_objs, LIBS=cabana_base_libs)
 imgui_core_objs = [cabana_env.Object(target='cabana_' + os.path.splitext(os.path.basename(src))[0], source=src) for src in imgui_sources]
