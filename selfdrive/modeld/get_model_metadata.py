@@ -22,16 +22,23 @@ class MetadataOnnxPBParser(OnnxPBParser):
     return obj
 
 
-def get_name_and_shape(value_info: dict[str, Any]) -> tuple[str, tuple[int, ...]]:
-  shape = tuple(int(dim) if isinstance(dim, int) else 0 for dim in value_info["parsed_type"].shape)
-  name = value_info["name"]
+def get_name_and_shape(value_info: dict[str, Any] | tuple[str, Any]) -> tuple[str, tuple[int, ...]]:
+  if isinstance(value_info, tuple):
+    name, parsed_type = value_info
+  else:
+    name, parsed_type = value_info["name"], value_info["parsed_type"]
+  shape = tuple(int(dim) if isinstance(dim, int) else 0 for dim in parsed_type.shape)
   return name, shape
 
 
 def get_metadata_value_by_name(model: dict[str, Any], name: str) -> str | Any:
   for prop in model["metadata_props"]:
-    if prop["key"] == name:
-      return prop["value"]
+    if isinstance(prop, tuple):
+      key, value = prop
+    else:
+      key, value = prop["key"], prop["value"]
+    if key == name:
+      return value
   return None
 
 
