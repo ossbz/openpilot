@@ -88,7 +88,7 @@ class CarInterface(CarInterfaceBase):
 
     # since we don't yet parse radar on TSS2 radar-based ACC cars, gate longitudinal behind alpha toggle
     if candidate in RADAR_ACC_CAR:
-      ret.alphaLongitudinalAvailable = False
+      ret.alphaLongitudinalAvailable = True
 
       if alpha_long:
         ret.flags |= ToyotaFlags.DISABLE_RADAR.value
@@ -98,8 +98,7 @@ class CarInterface(CarInterfaceBase):
     # openpilot longitudinal behind alpha long toggle:
     #  - TSS2 radar ACC cars (disables radar)
 
-    ret.openpilotLongitudinalControl = (candidate in (TSS2_CAR - RADAR_ACC_CAR) or
-                                        bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value))
+    ret.openpilotLongitudinalControl = False
 
     ret.autoResumeSng = ret.openpilotLongitudinalControl
 
